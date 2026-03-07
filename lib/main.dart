@@ -7,6 +7,7 @@ import 'core/theme/app_theme.dart';
 import 'data/database/app_database.dart';
 import 'data/database/database_seeder.dart';
 import 'shared/providers/repository_providers.dart';
+import 'features/pomodoro/overlay/pomodoro_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

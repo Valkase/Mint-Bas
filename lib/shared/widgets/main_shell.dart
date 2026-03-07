@@ -8,6 +8,8 @@ import 'package:bd_project/core/providers/theme_provider.dart';
 import 'package:bd_project/core/theme/app_theme.dart';
 import 'package:bd_project/features/pomodoro/providers/pomodoro_notifier.dart';
 import 'package:bd_project/features/pomodoro/services/overlay_service.dart';
+
+//ignore: unused_import
 import 'package:bd_project/features/tasks/providers/tasks_notifier.dart';
 import 'package:bd_project/shared/providers/repository_providers.dart';
 
@@ -75,11 +77,12 @@ class _MainShellState extends ConsumerState<MainShell>
 
     switch (state) {
       case AppLifecycleState.paused:
-      case AppLifecycleState.inactive:
-      // Only show overlay when the timer is actually doing something
+      // inactive fires first on Android (screen dimming / notification shade).
+      // We only show the overlay on paused — that's the true "left the app" event.
         if (timerActive) _showOverlay(pom);
       case AppLifecycleState.resumed:
         _hideOverlay();
+      case AppLifecycleState.inactive:
       case AppLifecycleState.detached:
       case AppLifecycleState.hidden:
         break;
@@ -92,6 +95,8 @@ class _MainShellState extends ConsumerState<MainShell>
     final granted = await OverlayService.instance.isPermissionGranted;
     if (!granted) return;
     await OverlayService.instance.show();
+    // Small delay so the overlay window finishes inflating before we send data.
+    await Future.delayed(const Duration(milliseconds: 300));
     await OverlayService.instance.pushState(
       secondsLeft: pom.secondsLeft,
       phase      : _phaseKey(pom.phase),
@@ -305,13 +310,14 @@ class _AnimatedNavBarState extends State<_AnimatedNavBar>
           AnimatedBuilder(
             animation: _pillPos,
             builder  : (_, __) {
-              final fraction = _pillPos.value / (tabCount - 1);
-              final maxOffset = MediaQuery.of(context).size.width - _pillSize;
-              final pillLeft  = fraction * maxOffset;
+              // Each tab owns an equal slice of the bar width.
+              // The pill slides to the centre of the active tab's slice.
+              final tabWidth = MediaQuery.of(context).size.width / tabCount;
+              final pillLeft = _pillPos.value * tabWidth + (tabWidth - _pillSize) / 2;
 
               return Positioned(
                 left  : pillLeft,
-                top   : (_barHeight - _pillSize) / 2 + _liftAmount / 2,
+                top   : (_barHeight - _pillSize) / 2,
                 child : Container(
                   width : _pillSize,
                   height: _pillSize,
