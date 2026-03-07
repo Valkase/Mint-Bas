@@ -1,233 +1,90 @@
-import 'dart:async';
+// lib/shared/widgets/main_shell.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/providers/theme_provider.dart';
+import '../../core/theme/app_theme.dart';
 
-import 'package:bd_project/core/providers/theme_provider.dart';
-import 'package:bd_project/core/theme/app_theme.dart';
-import 'package:bd_project/features/pomodoro/providers/pomodoro_notifier.dart';
-import 'package:bd_project/features/pomodoro/services/overlay_service.dart';
+// ── Nav item model ────────────────────────────────────────────────────────────
 
-//ignore: unused_import
-import 'package:bd_project/features/tasks/providers/tasks_notifier.dart';
-import 'package:bd_project/shared/providers/repository_providers.dart';
+class _NavItem {
+  final IconData icon;
+  final IconData activeIcon;
+  final String   label;
+  final String   route;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MainShell
-//
-// Hosts the animated bottom nav bar and manages the floating Pomodoro overlay:
-//   • Shows overlay when app goes to background while a timer is active
-//   • Hides overlay when app returns to foreground
-//   • Forwards play/pause and open_app actions from the overlay to the notifier
-//   • Pushes live timer state to the overlay on every state change
-// ─────────────────────────────────────────────────────────────────────────────
+  const _NavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+    required this.route,
+  });
+}
 
-class MainShell extends ConsumerStatefulWidget {
-  final int    currentIndex;
+const _navItems = [
+  _NavItem(
+    icon:       Icons.check_circle_outline,
+    activeIcon: Icons.check_circle,
+    label:      'Tasks',
+    route:      '/',
+  ),
+  _NavItem(
+    icon:       Icons.bar_chart_outlined,
+    activeIcon: Icons.bar_chart_rounded,
+    label:      'Progress',
+    route:      '/dashboard',
+  ),
+  _NavItem(
+    icon:       Icons.redeem_outlined,
+    activeIcon: Icons.redeem_rounded,
+    label:      'Rewards',
+    route:      '/rewards',
+  ),
+  _NavItem(
+    icon:       Icons.account_balance_wallet_outlined,
+    activeIcon: Icons.account_balance_wallet_rounded,
+    label:      'Banking',
+    route:      '/banking',
+  ),
+];
+
+// ── Shell ─────────────────────────────────────────────────────────────────────
+
+class MainShell extends ConsumerWidget {
   final Widget child;
+  final int    currentIndex;
 
   const MainShell({
     super.key,
-    required this.currentIndex,
     required this.child,
+    required this.currentIndex,
   });
 
   @override
-  ConsumerState<MainShell> createState() => _MainShellState();
-}
-
-class _MainShellState extends ConsumerState<MainShell>
-    with WidgetsBindingObserver {
-
-  StreamSubscription<Map<String, dynamic>>? _actionSub;
-
-  // Cache of the last known attached task name — updated when taskId changes
-  String? _lastTaskName;
-
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-
-    // Request "Draw over other apps" permission once on first launch.
-    // The OS only shows a dialog when it's actually needed — if already
-    // granted this returns immediately.
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await OverlayService.instance.requestPermission();
-      _listenOverlayActions();
-    });
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _actionSub?.cancel();
-    super.dispose();
-  }
-
-  // ── App lifecycle → overlay show / hide ───────────────────────────────────
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    final pom = ref.read(pomodoroNotifierProvider);
-    final timerActive = pom.status != PomodoroStatus.idle;
-
-    switch (state) {
-      case AppLifecycleState.paused:
-      // inactive fires first on Android (screen dimming / notification shade).
-      // We only show the overlay on paused — that's the true "left the app" event.
-        if (timerActive) _showOverlay(pom);
-      case AppLifecycleState.resumed:
-        _hideOverlay();
-      case AppLifecycleState.inactive:
-      case AppLifecycleState.detached:
-      case AppLifecycleState.hidden:
-        break;
-    }
-  }
-
-  // ── Overlay management ─────────────────────────────────────────────────────
-
-  Future<void> _showOverlay(PomodoroState pom) async {
-    final granted = await OverlayService.instance.isPermissionGranted;
-    if (!granted) return;
-    await OverlayService.instance.show();
-    // Small delay so the overlay window finishes inflating before we send data.
-    await Future.delayed(const Duration(milliseconds: 300));
-    await OverlayService.instance.pushState(
-      secondsLeft: pom.secondsLeft,
-      phase      : _phaseKey(pom.phase),
-      isRunning  : pom.status == PomodoroStatus.running,
-      taskName   : _lastTaskName,
-    );
-  }
-
-  Future<void> _hideOverlay() async {
-    await OverlayService.instance.hide();
-  }
-
-  // ── Listen to actions coming FROM the overlay ──────────────────────────────
-
-  void _listenOverlayActions() {
-    _actionSub = OverlayService.instance.actionStream.listen((msg) {
-      final action = msg['action'] as String?;
-      if (action == null) return;
-
-      final notifier = ref.read(pomodoroNotifierProvider.notifier);
-      final pom      = ref.read(pomodoroNotifierProvider);
-
-      switch (action) {
-        case 'play_pause':
-          HapticFeedback.lightImpact();
-          if (pom.status == PomodoroStatus.running) {
-            notifier.pause();
-          } else {
-            notifier.resume();
-          }
-
-        case 'open_app':
-        // The overlay closes itself; the OS will handle bringing the app
-        // to the foreground when the user taps on it.
-        // We hide the overlay from our side so state stays in sync.
-          _hideOverlay();
-      }
-    });
-  }
-
-  // ── Push state updates to the overlay on every notifier change ─────────────
-  //
-  // Called by ref.listen in build(). We update task name when taskId changes
-  // (requires a DB lookup), then push the full state to the overlay widget.
-
-  Future<void> _onPomodoroStateChanged(
-      PomodoroState? prev,
-      PomodoroState  next,
-      ) async {
-    // Resolve task name if the attached task changed
-    if (prev?.attachedTaskId != next.attachedTaskId) {
-      _lastTaskName = await _resolveTaskName(next.attachedTaskId);
-      OverlayService.instance.setTaskName(_lastTaskName);
-    }
-
-    // Push live state to the overlay (no-op if overlay isn't visible)
-    await OverlayService.instance.pushState(
-      secondsLeft: next.secondsLeft,
-      phase      : _phaseKey(next.phase),
-      isRunning  : next.status == PomodoroStatus.running,
-      taskName   : _lastTaskName,
-    );
-
-    // If the timer was just stopped/reset, close the overlay
-    if (prev?.status != PomodoroStatus.idle &&
-        next.status == PomodoroStatus.idle) {
-      await _hideOverlay();
-    }
-  }
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
-  Future<String?> _resolveTaskName(String? taskId) async {
-    if (taskId == null) return null;
-    try {
-      final taskDao = ref.read(taskDaoProvider);
-      final task    = await taskDao.watchTaskById(taskId).first;
-      return task?.title;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  String _phaseKey(PomodoroPhase phase) => switch (phase) {
-    PomodoroPhase.work       => 'work',
-    PomodoroPhase.shortBreak => 'shortBreak',
-    PomodoroPhase.longBreak  => 'longBreak',
-  };
-
-  // ── Navigation ─────────────────────────────────────────────────────────────
-
-  void _onTap(BuildContext context, int index) {
-    HapticFeedback.lightImpact();
-    switch (index) {
-      case 0: context.go('/');
-      case 1: context.go('/dashboard');
-      case 2: context.go('/rewards');
-      case 3: context.go('/banking');
-    }
-  }
-
-  // ── Build ──────────────────────────────────────────────────────────────────
-
-  @override
-  Widget build(BuildContext context) {
-    ref.watch(themeProvider); // rebuild on theme change
-
-    // Listen to every timer state change — push to overlay & handle idle
-    ref.listen<PomodoroState>(
-      pomodoroNotifierProvider,
-      _onPomodoroStateChanged,
-    );
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(themeProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
-      body           : widget.child,
+      body: child,
       bottomNavigationBar: _AnimatedNavBar(
-        currentIndex: widget.currentIndex,
-        onTap       : (i) => _onTap(context, i),
+        currentIndex: currentIndex,
+        onTap: (index) {
+          HapticFeedback.selectionClick();
+          context.go(_navItems[index].route);
+        },
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Animated Nav Bar
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Animated Nav Bar ──────────────────────────────────────────────────────────
 
 class _AnimatedNavBar extends StatefulWidget {
-  final int                  currentIndex;
-  final ValueChanged<int>    onTap;
+  final int               currentIndex;
+  final ValueChanged<int> onTap;
 
   const _AnimatedNavBar({
     required this.currentIndex,
@@ -239,161 +96,224 @@ class _AnimatedNavBar extends StatefulWidget {
 }
 
 class _AnimatedNavBarState extends State<_AnimatedNavBar>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
+  late final List<AnimationController> _iconCtrl;
+  late final List<Animation<double>>   _liftAnim;
+  late final List<Animation<double>>   _scaleAnim;
 
-  static const _barHeight  = 72.0;
-  static const _pillSize   = 54.0;
-  static const _liftAmount = -28.0;
+  late final List<AnimationController> _labelCtrl;
+  late final List<Animation<double>>   _labelAnim;
 
-  late final AnimationController _ctrl;
-  late       Animation<double>   _pillPos;
-  int _prevIndex = 0;
+  late final AnimationController _pillCtrl;
+  late       Animation<double>   _pillAnim;
 
-  static const _tabs = [
-    (icon: Icons.check_circle_outline, activeIcon: Icons.check_circle,    label: 'Tasks'),
-    (icon: Icons.bar_chart_outlined,   activeIcon: Icons.bar_chart,        label: 'Progress'),
-    (icon: Icons.redeem_outlined,      activeIcon: Icons.redeem,           label: 'Rewards'),
-    (icon: Icons.account_balance_wallet_outlined,
-    activeIcon: Icons.account_balance_wallet,
-    label: 'Banking'),
-  ];
+  static const double _pillSize   = 54;
+  static const double _barHeight  = 72;
+  static const double _liftAmount = -28;
 
   @override
   void initState() {
     super.initState();
-    _prevIndex = widget.currentIndex;
-    _ctrl = AnimationController(
-      vsync   : this,
-      duration: const Duration(milliseconds: 320),
+
+    _iconCtrl = List.generate(
+      _navItems.length,
+          (_) => AnimationController(
+          vsync: this, duration: const Duration(milliseconds: 300)),
     );
-    // .animate() must be called on the Tween, not on an Animation.
-    _pillPos = _buildTween(widget.currentIndex, widget.currentIndex)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+    _liftAnim = _iconCtrl.map((c) =>
+        Tween<double>(begin: 0, end: _liftAmount).animate(
+          CurvedAnimation(parent: c, curve: Curves.easeOutBack),
+        ),
+    ).toList();
+    _scaleAnim = _iconCtrl.map((c) =>
+        Tween<double>(begin: 1.0, end: 1.15).animate(
+          CurvedAnimation(parent: c, curve: Curves.easeOutBack),
+        ),
+    ).toList();
+
+    _labelCtrl = List.generate(
+      _navItems.length,
+          (_) => AnimationController(
+          vsync: this, duration: const Duration(milliseconds: 350)),
+    );
+    _labelAnim = _labelCtrl.map((c) =>
+        CurvedAnimation(parent: c, curve: Curves.easeInOut),
+    ).toList();
+
+    _pillCtrl = AnimationController(
+      vsync:    this,
+      duration: const Duration(milliseconds: 380),
+    );
+    _pillAnim = Tween<double>(
+      begin: widget.currentIndex.toDouble(),
+      end:   widget.currentIndex.toDouble(),
+    ).animate(CurvedAnimation(parent: _pillCtrl, curve: Curves.easeInOutCubic));
+
+    _iconCtrl[widget.currentIndex].value  = 1.0;
+    _labelCtrl[widget.currentIndex].value = 1.0;
   }
 
   @override
   void didUpdateWidget(_AnimatedNavBar old) {
     super.didUpdateWidget(old);
     if (old.currentIndex != widget.currentIndex) {
-      _pillPos = _buildTween(_prevIndex, widget.currentIndex)
-          .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
-      _ctrl.forward(from: 0);
-      _prevIndex = widget.currentIndex;
+      _animateTo(widget.currentIndex, from: old.currentIndex);
     }
   }
 
-  // Returns a plain Tween — .animate() is always called at the use site
-  Tween<double> _buildTween(int from, int to) {
-    return Tween<double>(begin: from.toDouble(), end: to.toDouble());
+  void _animateTo(int newIndex, {required int from}) {
+    _iconCtrl[from].reverse();
+    _labelCtrl[from].reverse();
+    _iconCtrl[newIndex].forward();
+    _labelCtrl[newIndex].forward();
+    _pillAnim = Tween<double>(
+      begin: from.toDouble(),
+      end:   newIndex.toDouble(),
+    ).animate(CurvedAnimation(parent: _pillCtrl, curve: Curves.easeInOutCubic));
+    _pillCtrl
+      ..reset()
+      ..forward();
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    for (final c in _iconCtrl)  c.dispose();
+    for (final c in _labelCtrl) c.dispose();
+    _pillCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final tabCount = _tabs.length;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return Container(
-      height: _barHeight + MediaQuery.of(context).padding.bottom,
+      height: _barHeight + bottomPadding,
       decoration: BoxDecoration(
-        color : AppTheme.surface,
-        border: Border(top: BorderSide(color: AppTheme.surfaceBorder)),
-      ),
-      child: Stack(
-        children: [
-
-          // ── Sliding pill indicator ─────────────────────────
-          AnimatedBuilder(
-            animation: _pillPos,
-            builder  : (_, __) {
-              // Each tab owns an equal slice of the bar width.
-              // The pill slides to the centre of the active tab's slice.
-              final tabWidth = MediaQuery.of(context).size.width / tabCount;
-              final pillLeft = _pillPos.value * tabWidth + (tabWidth - _pillSize) / 2;
-
-              return Positioned(
-                left  : pillLeft,
-                top   : (_barHeight - _pillSize) / 2,
-                child : Container(
-                  width : _pillSize,
-                  height: _pillSize,
-                  decoration: BoxDecoration(
-                    color       : AppTheme.primary.withAlpha(28),
-                    shape       : BoxShape.circle,
-                    border      : Border.all(
-                      color: AppTheme.primary.withAlpha(60),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // ── Tab items ──────────────────────────────────────
-          Row(
-            children: List.generate(tabCount, (i) {
-              final active = widget.currentIndex == i;
-              final tab    = _tabs[i];
-              return Expanded(
-                child: GestureDetector(
-                  onTap        : () => widget.onTap(i),
-                  behavior     : HitTestBehavior.opaque,
-                  child        : SizedBox(
-                    height: _barHeight,
-                    child : AnimatedBuilder(
-                      animation: _ctrl,
-                      builder  : (_, __) {
-                        return Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-
-                            // Icon with lift animation
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 220),
-                              curve   : Curves.easeOut,
-                              transform: Matrix4.translationValues(
-                                0, active ? _liftAmount : 0, 0,
-                              ),
-                              child: AnimatedScale(
-                                scale   : active ? 1.18 : 1.0,
-                                duration: const Duration(milliseconds: 220),
-                                child   : Icon(
-                                  active ? tab.activeIcon : tab.icon,
-                                  color: active
-                                      ? AppTheme.primary
-                                      : AppTheme.textSecondary,
-                                  size: 24,
-                                ),
-                              ),
-                            ),
-
-                            // Label fades in below active icon
-                            AnimatedOpacity(
-                              opacity : active ? 1.0 : 0.0,
-                              duration: const Duration(milliseconds: 200),
-                              child   : Text(
-                                tab.label,
-                                style: AppTheme.label.copyWith(
-                                  fontSize  : 10,
-                                  color     : AppTheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              );
-            }),
+        color: AppTheme.surface,
+        border: Border(
+          top: BorderSide(color: AppTheme.surfaceBorder, width: 1),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color:      Colors.black.withAlpha(60),
+            blurRadius: 20,
+            offset:     const Offset(0, -4),
           ),
         ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final totalWidth = constraints.maxWidth;
+            final tabWidth   = totalWidth / _navItems.length;
+
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+
+                // ── Sliding pill ───────────────────────────────────
+                AnimatedBuilder(
+                  animation: _pillAnim,
+                  builder: (_, __) {
+                    final pillX   =
+                        _pillAnim.value * tabWidth + (tabWidth - _pillSize) / 2;
+                    final pillTop =
+                        (_barHeight / 2 + _liftAmount) - (_pillSize / 2);
+                    return Positioned(
+                      top:  pillTop,
+                      left: pillX,
+                      child: Container(
+                        width:  _pillSize,
+                        height: _pillSize,
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color:        AppTheme.primary.withAlpha(100),
+                              blurRadius:   16,
+                              spreadRadius: 2,
+                              offset:       const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+                // ── Tab items ──────────────────────────────────────
+                Row(
+                  children: List.generate(_navItems.length, (i) {
+                    final item = _navItems[i];
+                    return Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap:    () => widget.onTap(i),
+                        child: SizedBox(
+                          height: _barHeight,
+                          child: AnimatedBuilder(
+                            animation: Listenable.merge(
+                                [_liftAnim[i], _scaleAnim[i], _labelAnim[i]]),
+                            builder: (context, __) {
+                              final isActive = widget.currentIndex == i;
+                              return Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Transform.translate(
+                                    offset: Offset(0, _liftAnim[i].value),
+                                    child: Transform.scale(
+                                      scale: _scaleAnim[i].value,
+                                      child: Icon(
+                                        isActive ? item.activeIcon : item.icon,
+                                        size:  24,
+                                        color: isActive
+                                            ? Colors.white
+                                            : AppTheme.textSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    bottom: 10,
+                                    child: Opacity(
+                                      opacity: _labelAnim[i].value,
+                                      child: Transform.translate(
+                                        offset: Offset(
+                                            0, (1 - _labelAnim[i].value) * 4),
+                                        child: Text(
+                                          item.label,
+                                          style: TextStyle(
+                                            fontFamily: 'Poppins',
+                                            fontSize:   10,
+                                            fontWeight: FontWeight.w600,
+                                            color:      AppTheme.primary,
+                                            shadows: [
+                                              Shadow(
+                                                color: AppTheme.primary
+                                                    .withAlpha(140),
+                                                blurRadius: 10,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

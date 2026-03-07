@@ -1,8 +1,10 @@
+// lib/features/pomodoro/providers/pomodoro_notifier.dart
+
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/providers/repository_providers.dart';
 import 'package:bd_project/features/pomodoro/providers/pomodoro_settings_provider.dart';
-import '../services/overlay_service.dart';
+import '../services/notification_service.dart';
 
 enum PomodoroStatus { idle, running, paused, completed }
 enum PomodoroPhase  { work, shortBreak, longBreak }
@@ -43,28 +45,36 @@ class PomodoroState {
 
 const Object _keepValue = Object();
 
+// ─────────────────────────────────────────────────────────────────────────────
+
 final pomodoroNotifierProvider =
 NotifierProvider<PomodoroNotifier, PomodoroState>(PomodoroNotifier.new);
 
 class PomodoroNotifier extends Notifier<PomodoroState> {
-  Timer? _timer;
+  Timer?  _timer;
+
+  // Task name is cached here so the notification can show it without DB access.
+  String? _cachedTaskName;
 
   @override
   PomodoroState build() {
+    ref.onDispose(() => _timer?.cancel());
     final s = ref.read(pomodoroSettingsProvider);
     return PomodoroState(secondsLeft: s.workMinutes * 60);
   }
 
+  // ── Public controls ────────────────────────────────────────────────────────
+
   void start() {
-    state = state.copyWith(status: PomodoroStatus.running);
+    _safeSetState(state.copyWith(status: PomodoroStatus.running));
     _startTicking(interval: const Duration(seconds: 1));
-    _pushOverlay();
+    _pushNotification();
   }
 
   void pause() {
     _timer?.cancel();
-    state = state.copyWith(status: PomodoroStatus.paused);
-    _pushOverlay();
+    _safeSetState(state.copyWith(status: PomodoroStatus.paused));
+    _pushNotification();
   }
 
   void resume() => start();
@@ -72,22 +82,30 @@ class PomodoroNotifier extends Notifier<PomodoroState> {
   void reset() {
     _timer?.cancel();
     final s = ref.read(pomodoroSettingsProvider);
-    state = PomodoroState(
+    _safeSetState(PomodoroState(
       secondsLeft   : s.workMinutes * 60,
       attachedTaskId: state.attachedTaskId,
-    );
-    _pushOverlay();
+    ));
+    NotificationService.instance.cancel();
   }
 
-  void attachTask(String taskId) {
-    state = state.copyWith(attachedTaskId: taskId);
-    _pushOverlay();
-  }
+  void attachTask(String taskId) =>
+      _safeSetState(state.copyWith(attachedTaskId: taskId));
 
   void detachTask() {
-    state = state.copyWith(attachedTaskId: null);
-    _pushOverlay();
+    _cachedTaskName = null;
+    _safeSetState(state.copyWith(attachedTaskId: null));
+    _pushNotification();
   }
+
+  /// Called by the UI when the attached task name is resolved.
+  /// Keeps the notification in sync without the notifier touching the DB.
+  void setTaskName(String? name) {
+    _cachedTaskName = name;
+    _pushNotification();
+  }
+
+  // ── Debug panel hooks ──────────────────────────────────────────────────────
 
   void triggerSessionComplete() {
     _timer?.cancel();
@@ -102,6 +120,8 @@ class PomodoroNotifier extends Notifier<PomodoroState> {
     );
   }
 
+  // ── Internal timer ─────────────────────────────────────────────────────────
+
   void _startTicking({required Duration interval, int step = 1}) {
     _timer?.cancel();
     _timer = Timer.periodic(interval, (_) {
@@ -110,13 +130,13 @@ class PomodoroNotifier extends Notifier<PomodoroState> {
         _timer?.cancel();
         _onSessionComplete();
       } else {
-        state = state.copyWith(secondsLeft: next);
-        _pushOverlay();
+        _safeSetState(state.copyWith(secondsLeft: next));
+        _pushNotification();
       }
     });
   }
 
-  void _onSessionComplete() async {
+  Future<void> _onSessionComplete() async {
     final completedPhase = state.phase;
     try {
       if (completedPhase == PomodoroPhase.work) {
@@ -157,21 +177,42 @@ class PomodoroNotifier extends Notifier<PomodoroState> {
       PomodoroPhase.longBreak  => settings.longBreakMinutes  * 60,
     };
 
-    state = state.copyWith(
+    _safeSetState(state.copyWith(
       status           : PomodoroStatus.completed,
       phase            : nextPhase,
       secondsLeft      : nextSeconds,
       completedSessions: newSessions,
-    );
-    _pushOverlay();
+    ));
+    // Cancel the notification — session is done; the screen will show its own
+    // completion animation.
+    NotificationService.instance.cancel();
   }
 
-  void _pushOverlay() {
-    OverlayService.instance.pushState(
+  // ── Notification helper ────────────────────────────────────────────────────
+
+  void _pushNotification() {
+    if (state.status == PomodoroStatus.idle ||
+        state.status == PomodoroStatus.completed) {
+      NotificationService.instance.cancel();
+      return;
+    }
+    NotificationService.instance.showTimer(
       secondsLeft: state.secondsLeft,
       phase      : _phaseKey(state.phase),
       isRunning  : state.status == PomodoroStatus.running,
+      taskName   : _cachedTaskName,
     );
+  }
+
+  // ── Safe state setter ──────────────────────────────────────────────────────
+  //
+  // Wraps `state =` in a try/catch to absorb the brief window where a disposed
+  // ConsumerStatefulElement is still in Riverpod's listener list, which would
+  // otherwise throw "_lifecycleState != _ElementLifecycle.defunct".
+  void _safeSetState(PomodoroState newState) {
+    try {
+      state = newState;
+    } catch (_) {}
   }
 
   String _phaseKey(PomodoroPhase phase) => switch (phase) {
