@@ -15,20 +15,11 @@ import '../../features/projects/screens/project_detail_screen.dart';
 import '../../features/debug/screens/debug_screen.dart';
 import '../../shared/widgets/main_shell.dart';
 
-// ── Startup flags — set by main() before runApp() ────────────────────────────
-//
-// Using simple top-level booleans (set once before the router is built)
-// keeps the redirect logic synchronous and avoids async GoRouter complexity.
-
 bool appOnboardingComplete = false;
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 final appRouter = GoRouter(
   initialLocation: '/',
   redirect: (context, state) {
-    // If the user hasn't seen onboarding yet, always redirect there first.
-    // Once on /onboarding, don't redirect again (avoid loop).
     if (!appOnboardingComplete && state.matchedLocation != '/onboarding') {
       return '/onboarding';
     }
@@ -47,18 +38,14 @@ final appRouter = GoRouter(
       builder: (context, state, child) {
         final location = state.matchedLocation;
         int index = 0;
-        if (location.startsWith('/dashboard'))  index = 1;
-        if (location.startsWith('/rewards'))    index = 2;
-        if (location.startsWith('/banking'))    index = 3;
+        if (location.startsWith('/dashboard')) index = 1;
+        if (location.startsWith('/rewards'))   index = 2;
+        if (location.startsWith('/banking'))   index = 3;
         return MainShell(child: child, currentIndex: index);
       },
       routes: [
         GoRoute(
           path:    '/',
-          builder: (_, __) => const TaskListScreen(listId: '',),
-        ),
-        GoRoute(
-          path:    '/all-tasks',
           builder: (_, __) => const AllTasksScreen(),
         ),
         GoRoute(
@@ -89,6 +76,15 @@ final appRouter = GoRouter(
         taskId: state.pathParameters['id']!,
       ),
     ),
+
+    // ── List detail (drilling into a specific task list) ───────────────────
+    GoRoute(                                          // ← this was missing
+      path:    '/list/:id',
+      builder: (_, state) => TaskListScreen(
+        listId: state.pathParameters['id']!,
+      ),
+    ),
+
     GoRoute(
       path:    '/projects',
       builder: (_, __) => const ProjectsScreen(),
