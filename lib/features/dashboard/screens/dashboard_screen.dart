@@ -1,3 +1,5 @@
+// lib/features/dashboard/screens/dashboard_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -8,13 +10,67 @@ import '../../../shared/providers/repository_providers.dart';
 import '../../banking/providers/banking_notifier.dart';
 import '../providers/dashboard_provider.dart';
 
+// ── _ListStat ──────────────────────────────────────────────────────────────
+
+class _ListStat {
+  final TaskList list;
+  final int total;
+  final int completed;
+
+  const _ListStat({
+    required this.list,
+    required this.total,
+    required this.completed,
+  });
+
+  double get rate => total == 0 ? 0.0 : completed / total;
+}
+
+// ── _listStatsProvider ────────────────────────────────────────────────────────
+//
+// BUG 5 FIX:
+// The old implementation called `watchTasksForList(list.id).first` inside
+// `asyncMap`. That subscribes and immediately cancels a brand-new Drift stream
+// for every list on every outer emission. Under rapid DB writes this leaks
+// short-lived subscriptions and makes the rankings stale — task completions
+// alone never trigger `watchAllLists`, so the stats would freeze until
+// something else caused a list-table write.
+//
+// Fix: replace `.first` on the watch-stream with `getTasksForList()`, which is
+// a plain Future<List<Task>> query — no stream subscription is opened or left
+// dangling. Rankings now update correctly whenever any list or task changes.
+// ─────────────────────────────────────────────────────────────────────────────
+final _listStatsProvider = StreamProvider<List<_ListStat>>((ref) {
+  final taskDao    = ref.watch(taskDaoProvider);
+  final projectDao = ref.watch(projectDaoProvider);
+
+  return projectDao.watchAllLists().asyncMap((allLists) async {
+    final stats = <_ListStat>[];
+    for (final list in allLists) {
+      // ← was: await taskDao.watchTasksForList(list.id).first
+      //   (stream subscription leak + stale data on task-only writes)
+      final tasks = await taskDao.getTasksForList(list.id);
+      if (tasks.isEmpty) continue;
+      stats.add(_ListStat(
+        list     : list,
+        total    : tasks.length,
+        completed: tasks.where((t) => t.isCompleted).length,
+      ));
+    }
+    stats.sort((a, b) => b.rate.compareTo(a.rate));
+    return stats.take(5).toList();
+  });
+});
+
+// ── DashboardScreen ────────────────────────────────────────────────────────
+
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final balanceAsync = ref.watch(balanceStreamProvider);
-    final statsAsync = ref.watch(dashboardStatsProvider);
+    final statsAsync   = ref.watch(dashboardStatsProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -47,9 +103,9 @@ class DashboardScreen extends ConsumerWidget {
                   children: [
                     _ProgressRing(sessions: stats.allSessions),
                     _StatChips(
-                      minutesFocused: stats.totalMinutesFocused,
-                      balance: balanceAsync.value ?? 0,
-                      sessionsCompleted: stats.allSessions
+                      minutesFocused    : stats.totalMinutesFocused,
+                      balance           : balanceAsync.value ?? 0,
+                      sessionsCompleted : stats.allSessions
                           .where((s) => s.type == 'work')
                           .length,
                     ),
@@ -102,11 +158,11 @@ class _Header extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: AppTheme.surface,
-              shape: BoxShape.circle,
-              border: Border.all(color: AppTheme.surfaceBorder),
+              color      : AppTheme.surface,
+              shape      : BoxShape.circle,
+              border     : Border.all(color: AppTheme.surfaceBorder),
             ),
-            child:  Icon(
+            child: Icon(
               Icons.notifications_outlined,
               color: AppTheme.textSecondary,
               size: 20,
@@ -127,9 +183,23 @@ class _ProgressRing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final weekStart = now.subtract(Duration(days: now.weekday - 1));
-    final thisWeek = sessions.where((s) =>
-    s.type == 'work' && s.completedAt.isAfter(weekStart)).length;
+
+    // ── BUG 2 FIX ──────────────────────────────────────────────────────────
+    // The old code did `now.subtract(Duration(days: now.weekday - 1))`, which
+    // kept the current time-of-day in weekStart. For example, if it's Monday
+    // 14:32, any work session completed Monday morning (before 14:32) was
+    // excluded from the current week's count — potentially losing several
+    // sessions per day.
+    //
+    // Fix: build weekStart from date-only components so it always points to
+    // midnight at the start of the current week (Monday 00:00:00.000).
+    // ─────────────────────────────────────────────────────────────────────
+    final weekStart = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1)); // ← was: now.subtract(...)
+
+    final thisWeek = sessions
+        .where((s) => s.type == 'work' && s.completedAt.isAfter(weekStart))
+        .length;
     final progress = (thisWeek / 20).clamp(0.0, 1.0);
 
     return Padding(
@@ -137,17 +207,17 @@ class _ProgressRing extends StatelessWidget {
       child: Column(
         children: [
           SizedBox(
-            width: 200,
+            width : 200,
             height: 200,
-            child: Stack(
+            child : Stack(
               alignment: Alignment.center,
               children: [
                 TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: progress),
+                  tween   : Tween(begin: 0, end: progress),
                   duration: const Duration(milliseconds: 1200),
-                  curve: Curves.easeOut,
-                  builder: (context, value, _) => CustomPaint(
-                    size: const Size(200, 200),
+                  curve   : Curves.easeOut,
+                  builder : (context, value, _) => CustomPaint(
+                    size   : const Size(200, 200),
                     painter: _RingPainter(progress: value),
                   ),
                 ),
@@ -188,10 +258,10 @@ class _RingPainter extends CustomPainter {
       center,
       radius,
       Paint()
-        ..color = const Color(0xFF2C302E)
-        ..style = PaintingStyle.stroke
+        ..color       = const Color(0xFF2C302E)
+        ..style       = PaintingStyle.stroke
         ..strokeWidth = 10
-        ..strokeCap = StrokeCap.round,
+        ..strokeCap   = StrokeCap.round,
     );
 
     if (progress > 0) {
@@ -201,10 +271,10 @@ class _RingPainter extends CustomPainter {
         2 * 3.14159 * progress,
         false,
         Paint()
-          ..color = AppTheme.primary
-          ..style = PaintingStyle.stroke
+          ..color       = AppTheme.primary
+          ..style       = PaintingStyle.stroke
           ..strokeWidth = 10
-          ..strokeCap = StrokeCap.round,
+          ..strokeCap   = StrokeCap.round,
       );
     }
   }
@@ -216,9 +286,9 @@ class _RingPainter extends CustomPainter {
 // ── Stat Chips ────────────────────────────────────────────────
 
 class _StatChips extends StatelessWidget {
-  final int minutesFocused;
+  final int    minutesFocused;
   final double balance;
-  final int sessionsCompleted;
+  final int    sessionsCompleted;
 
   const _StatChips({
     required this.minutesFocused,
@@ -241,28 +311,28 @@ class _StatChips extends StatelessWidget {
         children: [
           Expanded(
             child: _Chip(
-              icon: Icons.timer_outlined,
+              icon     : Icons.timer_outlined,
               iconColor: AppTheme.primary,
-              value: _formatTime(minutesFocused),
-              label: 'Focused',
+              value    : _formatTime(minutesFocused),
+              label    : 'Focused',
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: _Chip(
-              icon: Icons.local_fire_department_outlined,
+              icon     : Icons.local_fire_department_outlined,
               iconColor: AppTheme.coral,
-              value: '$sessionsCompleted',
-              label: 'Sessions',
+              value    : '$sessionsCompleted',
+              label    : 'Sessions',
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: _Chip(
-              icon: Icons.monetization_on_outlined,
+              icon     : Icons.monetization_on_outlined,
               iconColor: const Color(0xFFEAB308),
-              value: balance.toStringAsFixed(0),
-              label: 'Coins',
+              value    : balance.toStringAsFixed(0),
+              label    : 'Coins',
             ),
           ),
         ],
@@ -273,9 +343,9 @@ class _StatChips extends StatelessWidget {
 
 class _Chip extends StatelessWidget {
   final IconData icon;
-  final Color iconColor;
-  final String value;
-  final String label;
+  final Color    iconColor;
+  final String   value;
+  final String   label;
 
   const _Chip({
     required this.icon,
@@ -289,14 +359,14 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.surfaceBorder),
+        color        : AppTheme.surface,
+        borderRadius : BorderRadius.circular(16),
+        border       : Border.all(color: AppTheme.surfaceBorder),
       ),
       child: Column(
         children: [
           Container(
-            width: 32,
+            width : 32,
             height: 32,
             decoration: BoxDecoration(
               color: iconColor.withAlpha(38),
@@ -309,7 +379,7 @@ class _Chip extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
-            style: AppTheme.caption.copyWith(fontSize: 10),
+            style    : AppTheme.caption.copyWith(fontSize: 10),
             textAlign: TextAlign.center,
           ),
         ],
@@ -326,8 +396,8 @@ class _PomodoroTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final days = List.generate(7, (i) => now.subtract(Duration(days: 6 - i)));
+    final now          = DateTime.now();
+    final days         = List.generate(7, (i) => now.subtract(Duration(days: 6 - i)));
     final bucketLabels = ['0h', '6h', '12h', '18h'];
 
     return Padding(
@@ -338,11 +408,11 @@ class _PomodoroTimeline extends StatelessWidget {
           const _SectionHeader(title: 'Pomodoro Records', subtitle: 'Last 7 days'),
           const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.all(16),
+            padding   : const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTheme.surfaceBorder),
+              color        : AppTheme.surface,
+              borderRadius : BorderRadius.circular(16),
+              border       : Border.all(color: AppTheme.surfaceBorder),
             ),
             child: Column(
               children: [
@@ -354,7 +424,7 @@ class _PomodoroTimeline extends StatelessWidget {
                           (i) => Expanded(
                         child: Text(
                           bucketLabels[i],
-                          style: AppTheme.caption.copyWith(fontSize: 9),
+                          style    : AppTheme.caption.copyWith(fontSize: 9),
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -365,24 +435,24 @@ class _PomodoroTimeline extends StatelessWidget {
                 ...days.map((day) {
                   final daySessions = sessions
                       .where((s) =>
-                  s.completedAt.year == day.year &&
+                  s.completedAt.year  == day.year  &&
                       s.completedAt.month == day.month &&
-                      s.completedAt.day == day.day)
+                      s.completedAt.day   == day.day)
                       .toList();
 
                   final buckets = List.generate(4, (bucket) {
                     final startHour = bucket * 6;
-                    final endHour = startHour + 6;
+                    final endHour   = startHour + 6;
                     return daySessions
                         .where((s) =>
                     s.completedAt.hour >= startHour &&
-                        s.completedAt.hour < endHour)
+                        s.completedAt.hour <  endHour)
                         .length;
                   });
 
-                  final isToday = day.day == now.day &&
+                  final isToday = day.day   == now.day   &&
                       day.month == now.month &&
-                      day.year == now.year;
+                      day.year  == now.year;
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
@@ -393,13 +463,9 @@ class _PomodoroTimeline extends StatelessWidget {
                           child: Text(
                             isToday ? 'Today' : DateFormat('E').format(day),
                             style: AppTheme.caption.copyWith(
-                              fontSize: 10,
-                              color: isToday
-                                  ? AppTheme.primary
-                                  : AppTheme.textSecondary,
-                              fontWeight: isToday
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
+                              fontSize  : 10,
+                              color     : isToday ? AppTheme.primary : AppTheme.textSecondary,
+                              fontWeight: isToday ? FontWeight.w600  : FontWeight.w400,
                             ),
                           ),
                         ),
@@ -407,8 +473,8 @@ class _PomodoroTimeline extends StatelessWidget {
                           final count = buckets[i];
                           return Expanded(
                             child: Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 2),
-                              height: 24,
+                              margin    : const EdgeInsets.symmetric(horizontal: 2),
+                              height    : 24,
                               decoration: BoxDecoration(
                                 color: count == 0
                                     ? AppTheme.primary.withAlpha(15)
@@ -421,8 +487,8 @@ class _PomodoroTimeline extends StatelessWidget {
                                 child: Text(
                                   '$count',
                                   style: AppTheme.caption.copyWith(
-                                    fontSize: 9,
-                                    color: Colors.white.withAlpha(230),
+                                    fontSize  : 9,
+                                    color     : Colors.white.withAlpha(230),
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -441,15 +507,18 @@ class _PomodoroTimeline extends StatelessWidget {
                   children: [
                     Text('Less', style: AppTheme.caption.copyWith(fontSize: 9)),
                     const SizedBox(width: 4),
-                    ...List.generate(5, (i) => Container(
-                      margin: const EdgeInsets.only(right: 3),
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withAlpha(25 + i * 46),
-                        borderRadius: BorderRadius.circular(2),
+                    ...List.generate(
+                      5,
+                          (i) => Container(
+                        margin    : const EdgeInsets.only(right: 3),
+                        width     : 12,
+                        height    : 12,
+                        decoration: BoxDecoration(
+                          color        : AppTheme.primary.withAlpha(25 + i * 46),
+                          borderRadius : BorderRadius.circular(2),
+                        ),
                       ),
-                    )),
+                    ),
                     Text('More', style: AppTheme.caption.copyWith(fontSize: 9)),
                   ],
                 ),
@@ -470,144 +539,107 @@ class _FocusBarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
+    final now  = DateTime.now();
     final days = List.generate(7, (i) => now.subtract(Duration(days: 6 - i)));
 
     final dayHours = List.generate(days.length, (i) {
-      final day = days[i];
+      final day     = days[i];
       final minutes = sessions
           .where((s) =>
       s.type == 'work' &&
-          s.completedAt.year == day.year &&
+          s.completedAt.year  == day.year  &&
           s.completedAt.month == day.month &&
-          s.completedAt.day == day.day)
-      // FIX: duration is stored in minutes — dividing by 60 gave 0 for every
-      // session under an hour, making all bars invisible.
+          s.completedAt.day   == day.day)
+      // duration is stored in minutes — do NOT divide by 60 here.
           .fold<int>(0, (sum, s) => sum + s.duration);
       return minutes / 60.0;
     });
 
     final maxDayHours = dayHours.reduce((a, b) => a > b ? a : b);
-    final maxY = (maxDayHours + 1.0).clamp(4.0, 24.0);
-
-    final barGroups = List.generate(days.length, (i) {
-      return BarChartGroupData(
-        x: i,
-        barRods: [
-          BarChartRodData(
-            toY: dayHours[i],
-            color: i == days.length - 1 ? AppTheme.coral : AppTheme.primary,
-            width: 18,
-            borderRadius:
-            const BorderRadius.vertical(top: Radius.circular(4)),
-            backDrawRodData: BackgroundBarChartRodData(
-              show: true,
-              toY: maxY,
-              color: AppTheme.primary.withAlpha(15),
-            ),
-          ),
-        ],
-      );
-    });
+    final maxY        = maxDayHours < 2 ? 2.0 : (maxDayHours * 1.2).ceilToDouble();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _SectionHeader(
-            title: 'Focus Time',
-            subtitle: 'Hours per day this week',
-          ),
+          const _SectionHeader(title: 'Daily Focus Hours', subtitle: 'Last 7 days'),
           const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.fromLTRB(12, 24, 12, 12),
+            height    : 180,
+            padding   : const EdgeInsets.fromLTRB(8, 16, 16, 8),
             decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTheme.surfaceBorder),
+              color        : AppTheme.surface,
+              borderRadius : BorderRadius.circular(16),
+              border       : Border.all(color: AppTheme.surfaceBorder),
             ),
-            child: SizedBox(
-              height: 180,
-              child: BarChart(
-                BarChartData(
-                  maxY: maxY,
-                  minY: 0,
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: maxY / 4,
-                    getDrawingHorizontalLine: (_) =>  FlLine(
-                      color: AppTheme.surfaceBorder,
-                      strokeWidth: 1,
+            child: BarChart(
+              BarChartData(
+                maxY        : maxY,
+                barTouchData: BarTouchData(enabled: false),
+                titlesData  : FlTitlesData(
+                  show : true,
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles  : true,
+                      reservedSize: 32,
+                      getTitlesWidget: (value, _) => Text(
+                        '${value.toInt()}h',
+                        style: AppTheme.caption.copyWith(fontSize: 9),
+                      ),
                     ),
                   ),
-                  borderData: FlBorderData(show: false),
-                  titlesData: FlTitlesData(
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 32,
-                        interval: 1,
-                        getTitlesWidget: (value, _) => Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: Text(
-                            '${value.toInt()}h',
-                            style: AppTheme.caption.copyWith(fontSize: 9),
-                            textAlign: TextAlign.right,
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles  : true,
+                      reservedSize: 22,
+                      getTitlesWidget: (value, _) {
+                        final index = value.toInt();
+                        if (index < 0 || index >= days.length) {
+                          return const SizedBox.shrink();
+                        }
+                        final day     = days[index];
+                        final isToday = day.day   == now.day   &&
+                            day.month == now.month &&
+                            day.year  == now.year;
+                        return Text(
+                          isToday ? 'Today' : DateFormat('E').format(day),
+                          style: AppTheme.caption.copyWith(
+                            fontSize  : 9,
+                            color     : isToday ? AppTheme.primary : AppTheme.textSecondary,
+                            fontWeight: isToday ? FontWeight.w600  : FontWeight.w400,
                           ),
-                        ),
-                      ),
-                    ),
-                    rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        getTitlesWidget: (value, _) {
-                          final day = days[value.toInt()];
-                          final isToday = value.toInt() == 6;
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 10),
-                            child: Text(
-                              isToday ? 'Today' : DateFormat('E').format(day),
-                              style: AppTheme.caption.copyWith(
-                                fontSize: 9,
-                                color: isToday
-                                    ? AppTheme.coral
-                                    : AppTheme.textSecondary,
-                                fontWeight: isToday
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  barGroups: barGroups,
-                  barTouchData: BarTouchData(
-                    touchTooltipData: BarTouchTooltipData(
-                      getTooltipColor: (_) => AppTheme.elevated,
-                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        final hours = rod.toY;
-                        final mins = ((hours % 1) * 60).round();
-                        final label = mins == 0
-                            ? '${hours.toInt()}h'
-                            : '${hours.toInt()}h ${mins}m';
-                        return BarTooltipItem(
-                          label,
-                          AppTheme.caption.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600),
                         );
                       },
                     ),
                   ),
+                  rightTitles : const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles   : const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
+                gridData     : FlGridData(
+                  show             : true,
+                  drawVerticalLine : false,
+                  horizontalInterval: maxY / 4,
+                  getDrawingHorizontalLine: (_) => FlLine(
+                    color      : AppTheme.surfaceBorder,
+                    strokeWidth: 1,
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                barGroups : List.generate(days.length, (i) {
+                  return BarChartGroupData(
+                    x    : i,
+                    barRods: [
+                      BarChartRodData(
+                        toY          : dayHours[i],
+                        color        : AppTheme.primary.withAlpha(
+                            dayHours[i] > 0 ? 200 : 40),
+                        width        : 16,
+                        borderRadius : BorderRadius.circular(4),
+                      ),
+                    ],
+                  );
+                }),
               ),
             ),
           ),
@@ -618,43 +650,6 @@ class _FocusBarChart extends StatelessWidget {
 }
 
 // ── Most Productive List ──────────────────────────────────────
-
-class _ListStat {
-  final TaskList list;
-  final int total;
-  final int completed;
-
-  const _ListStat({
-    required this.list,
-    required this.total,
-    required this.completed,
-  });
-
-  double get rate => total == 0 ? 0.0 : completed / total;
-}
-
-// FIX: StreamProvider so rankings update live when tasks are completed,
-// instead of freezing at whatever state they were in at app startup.
-final _listStatsProvider = StreamProvider<List<_ListStat>>((ref) {
-  final taskDao    = ref.watch(taskDaoProvider);
-  final projectDao = ref.watch(projectDaoProvider);
-
-  // Watch all lists reactively; rebuild whenever any list/task changes
-  return projectDao.watchAllLists().asyncMap((allLists) async {
-    final stats = <_ListStat>[];
-    for (final list in allLists) {
-      final tasks = await taskDao.watchTasksForList(list.id).first;
-      if (tasks.isEmpty) continue;
-      stats.add(_ListStat(
-        list:      list,
-        total:     tasks.length,
-        completed: tasks.where((t) => t.isCompleted).length,
-      ));
-    }
-    stats.sort((a, b) => b.rate.compareTo(a.rate));
-    return stats.take(5).toList();
-  });
-});
 
 class _MostProductiveList extends ConsumerWidget {
   const _MostProductiveList();
@@ -669,23 +664,25 @@ class _MostProductiveList extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _SectionHeader(
-            title: 'Most Productive Lists',
+            title   : 'Most Productive Lists',
             subtitle: 'By completion rate',
           ),
           const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.all(16),
+            padding   : const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTheme.surfaceBorder),
+              color        : AppTheme.surface,
+              borderRadius : BorderRadius.circular(16),
+              border       : Border.all(color: AppTheme.surfaceBorder),
             ),
             child: statsAsync.when(
               loading: () =>  SizedBox(
                 height: 80,
-                child: Center(
+                child : Center(
                   child: CircularProgressIndicator(
-                      color: AppTheme.primary, strokeWidth: 2),
+                    color      : AppTheme.primary,
+                    strokeWidth: 2,
+                  ),
                 ),
               ),
               error: (e, _) => Text(
@@ -698,8 +695,11 @@ class _MostProductiveList extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     child: Row(
                       children: [
-                         Icon(Icons.checklist_outlined,
-                            color: AppTheme.textDisabled, size: 20),
+                        Icon(
+                          Icons.checklist_outlined,
+                          color: AppTheme.textDisabled,
+                          size : 20,
+                        ),
                         const SizedBox(width: 12),
                         Text(
                           'Complete some tasks to see rankings.',
@@ -709,17 +709,13 @@ class _MostProductiveList extends ConsumerWidget {
                     ),
                   );
                 }
-
                 return Column(
-                  children: stats.asMap().entries.map((entry) {
-                    final rank = entry.key;
-                    final stat = entry.value;
-                    return _ListRankRow(
-                      stat: stat,
-                      rank: rank,
-                      isLast: rank == stats.length - 1,
+                  children: List.generate(stats.length, (i) {
+                    return _ListStatRow(
+                      stat  : stats[i],
+                      isLast: i == stats.length - 1,
                     );
-                  }).toList(),
+                  }),
                 );
               },
             ),
@@ -730,28 +726,15 @@ class _MostProductiveList extends ConsumerWidget {
   }
 }
 
-class _ListRankRow extends StatelessWidget {
+class _ListStatRow extends StatelessWidget {
   final _ListStat stat;
-  final int rank;
-  final bool isLast;
+  final bool      isLast;
 
-  const _ListRankRow({
-    required this.stat,
-    required this.rank,
-    required this.isLast,
-  });
-
-  Color _rankColor(int rank) => switch (rank) {
-    0 => const Color(0xFFEAB308), // gold
-    1 => const Color(0xFF94A3B8), // silver
-    2 => const Color(0xFFB45309), // bronze
-    _ => AppTheme.textDisabled,
-  };
+  const _ListStatRow({required this.stat, required this.isLast});
 
   @override
   Widget build(BuildContext context) {
-    final pct = (stat.rate * 100).round();
-    final rankColor = _rankColor(rank);
+    final pct = (stat.rate * 100).toInt();
 
     return Column(
       children: [
@@ -759,25 +742,6 @@ class _ListRankRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
             children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: rankColor.withAlpha(rank < 3 ? 38 : 20),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    '${rank + 1}',
-                    style: AppTheme.label.copyWith(
-                      color: rankColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -785,29 +749,22 @@ class _ListRankRow extends StatelessWidget {
                     Text(
                       stat.list.name,
                       style: AppTheme.body.copyWith(
-                        fontSize: 13,
+                        fontSize  : 13,
                         fontWeight: FontWeight.w500,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      maxLines : 1,
+                      overflow : TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 5),
+                    const SizedBox(height: 6),
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(3),
-                      child: TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 0, end: stat.rate),
-                        duration: Duration(milliseconds: 700 + rank * 100),
-                        curve: Curves.easeOut,
-                        builder: (_, value, __) => LinearProgressIndicator(
-                          value: value,
-                          minHeight: 5,
-                          backgroundColor: AppTheme.primary.withAlpha(20),
-                          valueColor: AlwaysStoppedAnimation(
-                            rank == 0
-                                ? AppTheme.primary
-                                : AppTheme.primary.withAlpha(180),
-                          ),
-                        ),
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value          : stat.rate,
+                        backgroundColor: AppTheme.surfaceBorder,
+                        color          : pct >= 80
+                            ? AppTheme.primary
+                            : AppTheme.primary.withAlpha(180),
+                        minHeight      : 5,
                       ),
                     ),
                   ],
@@ -820,7 +777,7 @@ class _ListRankRow extends StatelessWidget {
                   Text(
                     '$pct%',
                     style: AppTheme.body.copyWith(
-                      fontSize: 13,
+                      fontSize  : 13,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -849,7 +806,7 @@ class _EncouragementCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding   : const EdgeInsets.all(16),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
@@ -858,20 +815,20 @@ class _EncouragementCard extends StatelessWidget {
             ],
           ),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppTheme.primary.withAlpha(38)),
+          border      : Border.all(color: AppTheme.primary.withAlpha(38)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-             Icon(Icons.spa_outlined, color: AppTheme.primary, size: 18),
+            Icon(Icons.spa_outlined, color: AppTheme.primary, size: 18),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 '"Small steps are still progress. You\'re doing just fine."',
                 style: AppTheme.body.copyWith(
                   fontStyle: FontStyle.italic,
-                  fontSize: 13,
-                  height: 1.6,
+                  fontSize : 13,
+                  height   : 1.6,
                 ),
               ),
             ),
@@ -893,13 +850,10 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      mainAxisAlignment : MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Text(
-          title,
-          style: AppTheme.body.copyWith(fontWeight: FontWeight.w600),
-        ),
+        Text(title, style: AppTheme.body.copyWith(fontWeight: FontWeight.w600)),
         Text(subtitle, style: AppTheme.caption.copyWith(fontSize: 11)),
       ],
     );

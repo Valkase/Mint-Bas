@@ -146,12 +146,20 @@ class PomodoroNotifier extends Notifier<PomodoroState> {
           type    : 'work',
         );
       } else {
+        // ── BUG 3 FIX ──────────────────────────────────────────────────────
+        // Previously, both break types were stored as the generic 'break'
+        // string, which conflicts with the debug panel's 'shortBreak' /
+        // 'longBreak' convention AND the table comment ('work' | 'short-break'
+        // | 'long-break'). We now derive the type string from the actual phase
+        // using _phaseKey(), which returns the same canonical strings used
+        // everywhere else (overlay, notification service, debug inject form).
+        // ──────────────────────────────────────────────────────────────────
         await ref.read(pomodoroRepositoryProvider).completeSession(
           taskId  : null,
           duration: completedPhase == PomodoroPhase.shortBreak
               ? ref.read(pomodoroSettingsProvider).shortBreakMinutes
               : ref.read(pomodoroSettingsProvider).longBreakMinutes,
-          type    : 'break',
+          type    : _phaseKey(completedPhase), // ← was hardcoded 'break'
         );
       }
     } catch (_) {}
@@ -183,8 +191,6 @@ class PomodoroNotifier extends Notifier<PomodoroState> {
       secondsLeft      : nextSeconds,
       completedSessions: newSessions,
     ));
-    // Cancel the notification — session is done; the screen will show its own
-    // completion animation.
     NotificationService.instance.cancel();
   }
 
@@ -215,6 +221,10 @@ class PomodoroNotifier extends Notifier<PomodoroState> {
     } catch (_) {}
   }
 
+  // ── Phase key ──────────────────────────────────────────────────────────────
+  //
+  // Single source of truth for the string representation of each phase.
+  // Used by: notification service, break session type storage, overlay.
   String _phaseKey(PomodoroPhase phase) => switch (phase) {
     PomodoroPhase.work       => 'work',
     PomodoroPhase.shortBreak => 'shortBreak',

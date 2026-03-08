@@ -1,29 +1,27 @@
-// lib/features/pomodoro/screens/pomodoro_screen.dart
-
-import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/database/app_database.dart';
-import '../../pomodoro/providers/pomodoro_notifier.dart';
-import '../../pomodoro/providers/pomodoro_settings_provider.dart';
-import '../../../features/settings/widgets/settings_sheet.dart';
+import '../providers/pomodoro_notifier.dart';
 import '../../../shared/providers/repository_providers.dart';
+import '../providers/pomodoro_settings_provider.dart';
+import '../../settings/widgets/settings_sheet.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Providers
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Providers ────────────────────────────────────────────────────────────────
 
 final _attachedTaskProvider = StreamProvider.family<Task?, String>(
       (ref, taskId) => ref.watch(taskDaoProvider).watchTaskById(taskId),
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Screen
-// ─────────────────────────────────────────────────────────────────────────────
+final _quoteProvider = FutureProvider<Quote?>(
+      (ref) => ref.watch(quoteDaoProvider).getRandomQuote(),
+);
+
+// ── Screen ───────────────────────────────────────────────────────────────────
 
 class PomodoroScreen extends ConsumerStatefulWidget {
   final String? initialTaskId;
@@ -35,105 +33,76 @@ class PomodoroScreen extends ConsumerStatefulWidget {
 
 class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
     with TickerProviderStateMixin {
-
   late final AnimationController _pulseCtrl;
   late final Animation<double>   _pulse;
+
   late final AnimationController _completionCtrl;
   late final Animation<double>   _completionScale;
   late final Animation<double>   _completionOpacity;
 
-  // Driven by listenManual — no ref.watch in build() to avoid defunct-element crash.
-  late PomodoroState                    _pom;
-  ProviderSubscription<PomodoroState>?  _pomSub;
-
-  Quote? _quote;
-  Timer? _quoteTimer;
-
-  bool          _showCompletion = false;
+  bool _showCompletion = false;
   PomodoroPhase _completedPhase = PomodoroPhase.work;
-
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
+  Quote? _quote;
+  bool _disposed = false;
 
   @override
   void initState() {
     super.initState();
 
-    _pom = ref.read(pomodoroNotifierProvider);
-
-    _pomSub = ref.listenManual<PomodoroState>(
-      pomodoroNotifierProvider,
-          (prev, next) {
-        if (!mounted) return;
-        setState(() => _pom = next);
-        if (prev?.status != PomodoroStatus.completed &&
-            next.status == PomodoroStatus.completed) {
-          _triggerCompletionOverlay(prev!.phase);
-        }
-      },
-    );
-
     _pulseCtrl = AnimationController(
-      vsync:    this,
+      vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
 
     _pulse = Tween<double>(begin: 1.0, end: 1.05).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
-    );
+        CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
 
     _completionCtrl = AnimationController(
-      vsync:    this,
-      duration: const Duration(milliseconds: 500),
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
     );
-    _completionScale = Tween<double>(begin: 0.6, end: 1.0).animate(
-      CurvedAnimation(parent: _completionCtrl, curve: Curves.elasticOut),
-    );
-    _completionOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-          parent: _completionCtrl, curve: const Interval(0.0, 0.4)),
-    );
-
-    _fetchQuote();
-    _quoteTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (mounted) _fetchQuote();
-    });
+    _completionScale = Tween<double>(begin: 0.7, end: 1.0).animate(
+        CurvedAnimation(parent: _completionCtrl, curve: Curves.elasticOut));
+    _completionOpacity = Tween<double>(begin: 0, end: 1).animate(
+        CurvedAnimation(parent: _completionCtrl, curve: const Interval(0, 0.3)));
 
     if (widget.initialTaskId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref
-            .read(pomodoroNotifierProvider.notifier)
-            .attachTask(widget.initialTaskId!);
+        ref.read(pomodoroNotifierProvider.notifier).attachTask(widget.initialTaskId!);
       });
     }
+
+    _loadInitialQuote();
   }
 
   @override
   void dispose() {
-    _pomSub?.close();
+    _disposed = true;
     _pulseCtrl.dispose();
     _completionCtrl.dispose();
-    _quoteTimer?.cancel();
     super.dispose();
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
-  Future<void> _fetchQuote() async {
+  Future<void> _loadInitialQuote() async {
     try {
-      final q = await ref.read(quoteDaoProvider).getRandomQuote();
+      final q = await ref.read(_quoteProvider.future);
       if (mounted) setState(() => _quote = q);
     } catch (_) {}
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
-    final pom       = _pom;
+    final pom = ref.watch(pomodoroNotifierProvider);
     final isRunning = pom.status == PomodoroStatus.running;
 
+    ref.listen<PomodoroState>(pomodoroNotifierProvider, (prev, next) {
+      if (prev?.phase != next.phase && next.status == PomodoroStatus.completed) {
+        _triggerCompletionOverlay(prev!.phase);
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || _disposed) return;
       if (isRunning && _pulseCtrl.isAnimating) {
         _pulseCtrl.stop();
       } else if (!isRunning && !_pulseCtrl.isAnimating) {
@@ -160,18 +129,18 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                         _SessionDots(pom: pom),
                         const SizedBox(height: 28),
                         _AttachedTaskCard(
-                          pom:    pom,
+                          pom   : pom,
                           onEdit: () => _showDetachSheet(context),
                         ),
                         const SizedBox(height: 40),
                         _Controls(
-                          pom:      pom,
-                          pulse:    _pulse,
-                          onStart:  _start,
-                          onPause:  _pause,
+                          pom     : pom,
+                          pulse   : _pulse,
+                          onStart : _start,
+                          onPause : _pause,
                           onResume: _resume,
-                          onReset:  _reset,
-                          onSkip:   _skip,
+                          onReset : _reset,
+                          onSkip  : _skip,
                         ),
                         const SizedBox(height: 48),
                         _QuoteFooter(quote: _quote, pom: pom),
@@ -183,28 +152,26 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
               ],
             ),
           ),
+
           if (_showCompletion)
             _CompletionOverlay(
               completedPhase: _completedPhase,
-              scaleAnim:      _completionScale,
-              opacityAnim:    _completionOpacity,
+              scaleAnim     : _completionScale,
+              opacityAnim   : _completionOpacity,
             ),
         ],
       ),
     );
   }
 
-  // ── Completion overlay ─────────────────────────────────────────────────────
-
   void _triggerCompletionOverlay(PomodoroPhase completedPhase) async {
     HapticFeedback.heavyImpact();
     setState(() {
-      _showCompletion = true;
       _completedPhase = completedPhase;
+      _showCompletion = true;
     });
     _completionCtrl.forward(from: 0);
-    _fetchQuote();
-    await Future.delayed(const Duration(milliseconds: 2500));
+    await Future.delayed(const Duration(milliseconds: 2200));
     if (mounted) {
       _completionCtrl.reverse().then((_) {
         if (mounted) setState(() => _showCompletion = false);
@@ -212,15 +179,14 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
     }
   }
 
-  // ── Control callbacks ──────────────────────────────────────────────────────
-
-  void _start()  { HapticFeedback.mediumImpact(); ref.read(pomodoroNotifierProvider.notifier).start(); }
-  void _pause()  { HapticFeedback.lightImpact();  ref.read(pomodoroNotifierProvider.notifier).pause(); }
-  void _resume() { HapticFeedback.mediumImpact(); ref.read(pomodoroNotifierProvider.notifier).resume(); }
-  void _reset()  { HapticFeedback.lightImpact();  ref.read(pomodoroNotifierProvider.notifier).reset(); }
-  void _skip()   { HapticFeedback.mediumImpact(); ref.read(pomodoroNotifierProvider.notifier).triggerSessionComplete(); }
-
-  // ── Header ─────────────────────────────────────────────────────────────────
+  void _start()  => ref.read(pomodoroNotifierProvider.notifier).start();
+  void _pause()  => ref.read(pomodoroNotifierProvider.notifier).pause();
+  void _resume() => ref.read(pomodoroNotifierProvider.notifier).resume();
+  void _reset()  => ref.read(pomodoroNotifierProvider.notifier).reset();
+  void _skip()   {
+    HapticFeedback.lightImpact();
+    ref.read(pomodoroNotifierProvider.notifier).triggerSessionComplete();
+  }
 
   Widget _buildHeader(BuildContext context) {
     return Padding(
@@ -228,27 +194,30 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _CircleIconButton(icon: Icons.arrow_back, onTap: () => context.pop()),
+          _CircleIconButton(
+              icon: Icons.arrow_back, onTap: () => context.pop()),
           Text(
             'Focus Session',
-            style: AppTheme.body.copyWith(fontWeight: FontWeight.w600, fontSize: 17),
+            style: AppTheme.body.copyWith(
+                fontWeight: FontWeight.w600, fontSize: 17),
           ),
           _CircleIconButton(
-            icon:  Icons.tune_rounded,
-            onTap: () { HapticFeedback.lightImpact(); showSettingsSheet(context); },
+            icon : Icons.tune_rounded,
+            onTap: () {
+              HapticFeedback.lightImpact();
+              showSettingsSheet(context);
+            },
           ),
         ],
       ),
     );
   }
 
-  // ── Detach sheet ───────────────────────────────────────────────────────────
-
   void _showDetachSheet(BuildContext context) {
     showModalBottomSheet(
-      context:         context,
+      context        : context,
       backgroundColor: AppTheme.elevated,
-      shape: const RoundedRectangleBorder(
+      shape          : const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) => _DetachSheet(
@@ -261,9 +230,7 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Timer Ring
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Timer Ring ───────────────────────────────────────────────────────────────
 
 class _TimerRing extends ConsumerWidget {
   final PomodoroState     pom;
@@ -288,6 +255,7 @@ class _TimerRing extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // FIX: pomodoroSettingsProvider returns the object directly, not an AsyncValue.
     final settings     = ref.watch(pomodoroSettingsProvider);
     final totalSeconds = switch (pom.phase) {
       PomodoroPhase.work       => settings.workMinutes       * 60,
@@ -299,32 +267,43 @@ class _TimerRing extends ConsumerWidget {
 
     return AnimatedBuilder(
       animation: pulse,
-      builder: (_, __) => Transform.scale(
-        scale: isRunning ? 1.0 : pulse.value,
+      builder  : (_, __) => Transform.scale(
+        scale: isRunning ? pulse.value : 1.0,
         child: SizedBox(
-          width: 288, height: 288,
-          child: Stack(
+          width : 240,
+          height: 240,
+          child : Stack(
             alignment: Alignment.center,
-            children: [
-              CustomPaint(
-                size:    const Size(288, 288),
-                painter: _RingPainter(progress: progress, color: _color),
+            children  : [
+              SizedBox(
+                width : 240,
+                height: 240,
+                child : CircularProgressIndicator(
+                  value      : progress,
+                  strokeWidth: 6,
+                  color      : _color,
+                  backgroundColor: AppTheme.surfaceBorder,
+                ),
               ),
               Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(_phaseLabel,
-                      style: AppTheme.label.copyWith(
-                        color: _color, fontWeight: FontWeight.w600, fontSize: 15,
-                      )),
-                  const SizedBox(height: 6),
-                  Text(_fmt(pom.secondsLeft),
-                      style: AppTheme.display.copyWith(
-                        fontSize: 56, fontWeight: FontWeight.w600, letterSpacing: -2,
-                      )),
-                  const SizedBox(height: 6),
-                  Text('minutes remaining',
-                      style: AppTheme.caption.copyWith(fontSize: 12)),
+                children    : [
+                  Text(
+                    _phaseLabel,
+                    style: AppTheme.caption.copyWith(
+                      color   : _color,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _fmt(pom.secondsLeft),
+                    style: AppTheme.heading.copyWith(
+                      fontSize  : 52,
+                      fontWeight: FontWeight.w300,
+                      letterSpacing: -2,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -335,45 +314,7 @@ class _TimerRing extends ConsumerWidget {
   }
 }
 
-class _RingPainter extends CustomPainter {
-  final double progress;
-  final Color  color;
-  const _RingPainter({required this.progress, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c  = Offset(size.width / 2, size.height / 2);
-    final r  = size.width / 2 - 16;
-    const sw = 10.0;
-    canvas.drawCircle(c, r,
-      Paint()
-        ..color       = AppTheme.surfaceBorder
-        ..style       = PaintingStyle.stroke
-        ..strokeWidth = sw,
-    );
-    if (progress > 0) {
-      canvas.drawArc(
-        Rect.fromCircle(center: c, radius: r),
-        -math.pi / 2,
-        2 * math.pi * progress,
-        false,
-        Paint()
-          ..color       = color
-          ..style       = PaintingStyle.stroke
-          ..strokeWidth = sw
-          ..strokeCap   = StrokeCap.round,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_RingPainter old) =>
-      old.progress != progress || old.color != color;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Session Dots
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Session dots ─────────────────────────────────────────────────────────────
 
 class _SessionDots extends StatelessWidget {
   final PomodoroState pom;
@@ -381,143 +322,86 @@ class _SessionDots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final doneInCycle = pom.completedSessions % 4;
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(4, (i) {
-            final filled = i < doneInCycle;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 400),
-              curve:    Curves.easeOut,
-              margin:   const EdgeInsets.symmetric(horizontal: 6),
-              width: 12, height: 12,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: filled ? AppTheme.primary : AppTheme.surfaceBorder,
-              ),
-            );
-          }),
-        ),
-        const SizedBox(height: 10),
-        Text('Session ${doneInCycle + 1} of 4',
-            style: AppTheme.caption.copyWith(
-                fontSize: 13, fontWeight: FontWeight.w500)),
-      ],
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(4, (i) {
+        final filled = i < (pom.completedSessions % 4);
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin  : const EdgeInsets.symmetric(horizontal: 4),
+          width   : filled ? 10 : 8,
+          height  : filled ? 10 : 8,
+          decoration: BoxDecoration(
+            color: filled ? AppTheme.primary : AppTheme.surfaceBorder,
+            shape: BoxShape.circle,
+          ),
+        );
+      }),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Attached Task Card
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Attached task card ───────────────────────────────────────────────────────
 
 class _AttachedTaskCard extends ConsumerWidget {
   final PomodoroState pom;
   final VoidCallback  onEdit;
+
   const _AttachedTaskCard({required this.pom, required this.onEdit});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final taskId = pom.attachedTaskId;
+    if (pom.attachedTaskId == null) return const SizedBox.shrink();
 
-    if (taskId == null) {
-      return Container(
-        padding:    const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppTheme.surface, borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            _taskIcon(Icons.link_outlined),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('No task attached',
-                      style: AppTheme.caption.copyWith(fontSize: 12)),
-                  const SizedBox(height: 2),
-                  Text('Free focus session',
-                      style: AppTheme.body.copyWith(fontSize: 14)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    final taskAsync = ref.watch(_attachedTaskProvider(pom.attachedTaskId!));
 
-    final taskAsync = ref.watch(_attachedTaskProvider(taskId));
     return taskAsync.when(
-      loading: () => const SizedBox(height: 72),
-      error:   (_, __) => const SizedBox.shrink(),
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
       data: (task) {
         if (task == null) return const SizedBox.shrink();
-
-        // Keep the notifier (and therefore the notification) in sync with the
-        // resolved task name — this is the only place that has DB access here.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          ref
-              .read(pomodoroNotifierProvider.notifier)
-              .setTaskName(task.title);
-        });
-
-        return Container(
-          padding:    const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppTheme.surface, borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              _taskIcon(Icons.school_outlined),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Current Task',
-                        style: AppTheme.caption.copyWith(fontSize: 12)),
-                    const SizedBox(height: 2),
-                    Text(task.title,
-                        style: AppTheme.body.copyWith(fontSize: 15),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
+        return GestureDetector(
+          onTap: onEdit,
+          child: Container(
+            width     : double.infinity,
+            padding   : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color       : AppTheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border      : Border.all(color: AppTheme.surfaceBorder),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.task_alt_rounded,
+                    color: AppTheme.primary, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    task.title,
+                    style: AppTheme.body.copyWith(fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-              GestureDetector(
-                onTap: onEdit,
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(Icons.edit_outlined,
-                      color: AppTheme.textSecondary, size: 20),
-                ),
-              ),
-            ],
+                Icon(Icons.close, color: AppTheme.textSecondary, size: 16),
+              ],
+            ),
           ),
         );
       },
     );
   }
-
-  Widget _taskIcon(IconData icon) => Container(
-    width: 40, height: 40,
-    decoration: BoxDecoration(
-      color: AppTheme.primary.withAlpha(51), shape: BoxShape.circle,
-    ),
-    child: Icon(icon, color: AppTheme.primary, size: 20),
-  );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Controls
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Controls ─────────────────────────────────────────────────────────────────
 
 class _Controls extends StatelessWidget {
   final PomodoroState     pom;
   final Animation<double> pulse;
-  final VoidCallback      onStart, onPause, onResume, onReset, onSkip;
+  final VoidCallback      onStart;
+  final VoidCallback      onPause;
+  final VoidCallback      onResume;
+  final VoidCallback      onReset;
+  final VoidCallback      onSkip;
 
   const _Controls({
     required this.pom,
@@ -529,192 +413,62 @@ class _Controls extends StatelessWidget {
     required this.onSkip,
   });
 
-  bool get _isRunning => pom.status == PomodoroStatus.running;
-  bool get _isIdle    => pom.status == PomodoroStatus.idle;
-
   @override
   Widget build(BuildContext context) {
+    final isRunning = pom.status == PomodoroStatus.running;
+    final isPaused  = pom.status == PomodoroStatus.paused;
+    final isIdle    = pom.status == PomodoroStatus.idle ||
+        pom.status == PomodoroStatus.completed;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _SideBtn(icon: Icons.restart_alt_rounded, enabled: !_isIdle, onTap: onReset),
-        const SizedBox(width: 32),
-        AnimatedBuilder(
-          animation: pulse,
-          builder: (_, __) => GestureDetector(
-            onTap: _isRunning ? onPause : (_isIdle ? onStart : onResume),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              width: 80, height: 80,
-              decoration: BoxDecoration(
-                color: AppTheme.primary,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color:      AppTheme.primary.withAlpha(_isRunning ? 128 : 76),
-                    blurRadius: _isRunning ? 28 : 16,
-                    offset:     const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Icon(
-                _isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                color: Colors.white, size: 40,
+        if (!isIdle) ...[
+          _CircleIconButton(icon: Icons.replay_rounded, onTap: onReset),
+          const SizedBox(width: 20),
+        ],
+        GestureDetector(
+          onTap: isRunning ? onPause : (isPaused ? onResume : onStart),
+          child: AnimatedBuilder(
+            animation: pulse,
+            builder  : (_, __) => Transform.scale(
+              scale: isRunning ? pulse.value : 1.0,
+              child: Container(
+                width : 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: AppTheme.primary,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color      : AppTheme.primary.withAlpha(80),
+                      blurRadius : isRunning ? 0 : 20 * pulse.value,
+                      spreadRadius: isRunning ? 0 : 4 * pulse.value,
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size : 36,
+                ),
               ),
             ),
           ),
         ),
-        const SizedBox(width: 32),
-        _SideBtn(icon: Icons.skip_next_rounded, enabled: !_isIdle, onTap: onSkip),
+        if (!isIdle) ...[
+          const SizedBox(width: 20),
+          _CircleIconButton(icon: Icons.skip_next_rounded, onTap: onSkip),
+        ],
       ],
     );
   }
 }
 
-class _SideBtn extends StatelessWidget {
-  final IconData icon; final bool enabled; final VoidCallback onTap;
-  const _SideBtn({required this.icon, required this.enabled, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 56, height: 56,
-        decoration: BoxDecoration(color: AppTheme.surface, shape: BoxShape.circle),
-        child: Icon(icon,
-            color: enabled ? AppTheme.textSecondary : AppTheme.textDisabled, size: 26),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Quote Footer
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _QuoteFooter extends StatelessWidget {
-  final Quote?        quote;
-  final PomodoroState pom;
-  const _QuoteFooter({required this.quote, required this.pom});
-
-  String get _fallback => switch (pom.phase) {
-    PomodoroPhase.work       => "Let's focus. 25 minutes to grow a little more.",
-    PomodoroPhase.shortBreak => 'Rest now. You did the work.',
-    PomodoroPhase.longBreak  => 'Take a real break. You earned this one.',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final text   = quote?.quote  ?? _fallback;
-    final author = quote?.author;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          Text('"$text"',
-              style: AppTheme.caption.copyWith(
-                  fontStyle: FontStyle.italic, fontSize: 12, height: 1.8),
-              textAlign: TextAlign.center),
-          if (author != null) ...[
-            const SizedBox(height: 6),
-            Text('— $author',
-                style: AppTheme.caption.copyWith(
-                    fontSize: 11, color: AppTheme.textDisabled)),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Detach Sheet
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _DetachSheet extends StatelessWidget {
-  final VoidCallback onDetach;
-  const _DetachSheet({required this.onDetach});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
-      child: Column(
-        mainAxisSize:       MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceBorder, borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text('Task Options', style: AppTheme.heading),
-          const SizedBox(height: 6),
-          Text(
-            'To focus on a different task, go back and tap the focus button on any task card.',
-            style: AppTheme.caption.copyWith(height: 1.6),
-          ),
-          const SizedBox(height: 24),
-          GestureDetector(
-            onTap: onDetach,
-            child: Container(
-              width:   double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color:        AppTheme.error.withAlpha(20),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.error.withAlpha(51)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.link_off_outlined, color: AppTheme.error, size: 18),
-                  const SizedBox(width: 8),
-                  Text('Detach from task',
-                      style: AppTheme.label.copyWith(color: AppTheme.error)),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Circle Icon Button
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _CircleIconButton extends StatelessWidget {
-  final IconData icon; final VoidCallback onTap;
-  const _CircleIconButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40, height: 40,
-        decoration: BoxDecoration(color: AppTheme.surface, shape: BoxShape.circle),
-        child: Icon(icon, color: AppTheme.textSecondary, size: 20),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Completion Overlay
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Completion Overlay ───────────────────────────────────────────────────────
 
 class _CompletionOverlay extends StatelessWidget {
-  final PomodoroPhase     completedPhase;
+  final PomodoroPhase completedPhase;
   final Animation<double> scaleAnim;
   final Animation<double> opacityAnim;
 
@@ -724,16 +478,11 @@ class _CompletionOverlay extends StatelessWidget {
     required this.opacityAnim,
   });
 
-  String   get _headline  => completedPhase == PomodoroPhase.work ? 'Session complete.' : 'Break over.';
-  String   get _subline   => completedPhase == PomodoroPhase.work ? 'Take a breath. You earned it.' : "Back to it. Let's go.";
-  Color    get _color     => completedPhase == PomodoroPhase.work ? AppTheme.primary : const Color(0xFF5A9E8A);
-  IconData get _icon      => completedPhase == PomodoroPhase.work ? Icons.self_improvement_outlined : Icons.bolt_outlined;
-  String   get _nextLabel => completedPhase == PomodoroPhase.work ? 'Starting break...' : 'Starting focus...';
-
   @override
   Widget build(BuildContext context) {
+    final isWork = completedPhase == PomodoroPhase.work;
     return Container(
-      color: AppTheme.background.withAlpha(230),
+      color: AppTheme.background.withAlpha(235),
       child: Center(
         child: FadeTransition(
           opacity: opacityAnim,
@@ -743,34 +492,153 @@ class _CompletionOverlay extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 88, height: 88,
+                  width: 80,
+                  height: 80,
                   decoration: BoxDecoration(
-                    color:  _color.withAlpha(30),
-                    shape:  BoxShape.circle,
-                    border: Border.all(color: _color.withAlpha(80), width: 2),
+                    color: AppTheme.primary.withAlpha(38),
+                    shape: BoxShape.circle,
                   ),
-                  child: Icon(_icon, color: _color, size: 42),
+                  child: Icon(
+                    isWork ? Icons.check : Icons.wb_sunny_rounded,
+                    color: AppTheme.primary,
+                    size: 40,
+                  ),
                 ),
                 const SizedBox(height: 24),
-                Text(_headline, style: AppTheme.heading.copyWith(fontSize: 22)),
+                Text(
+                  isWork ? 'Session Complete!' : 'Break Over!',
+                  style: AppTheme.heading.copyWith(fontSize: 24),
+                ),
                 const SizedBox(height: 8),
-                Text(_subline,
-                    style: AppTheme.caption.copyWith(
-                        fontSize: 14, color: AppTheme.textSecondary)),
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color:        _color.withAlpha(20),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(_nextLabel,
-                      style: AppTheme.label.copyWith(color: _color, fontSize: 13)),
+                Text(
+                  isWork ? 'Time for a well-earned break.' : 'Ready to focus again?',
+                  style: AppTheme.body.copyWith(color: AppTheme.textSecondary),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Quote Footer ─────────────────────────────────────────────────────────────
+
+class _QuoteFooter extends StatelessWidget {
+  final Quote? quote;
+  final PomodoroState pom;
+  const _QuoteFooter({required this.quote, required this.pom});
+
+  @override
+  Widget build(BuildContext context) {
+    if (quote == null) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppTheme.surfaceBorder),
+      ),
+      child: Column(
+        children: [
+          Text(
+            '"${quote!.quote}"',
+            textAlign: TextAlign.center,
+            style: AppTheme.body.copyWith(
+              fontStyle: FontStyle.italic,
+              fontSize: 14,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          if (quote!.author != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              '— ${quote!.author}',
+              style: AppTheme.caption.copyWith(fontSize: 11),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+class _CircleIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _CircleIconButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppTheme.surfaceBorder),
+        ),
+        child: Icon(icon, color: AppTheme.textSecondary, size: 20),
+      ),
+    );
+  }
+}
+
+class _DetachSheet extends StatelessWidget {
+  final VoidCallback onDetach;
+  const _DetachSheet({required this.onDetach});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 48),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceBorder,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 32),
+          Text(
+            'Session Options',
+            style: AppTheme.heading.copyWith(fontSize: 20),
+          ),
+          const SizedBox(height: 24),
+          GestureDetector(
+            onTap: onDetach,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppTheme.error.withAlpha(20),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.error.withAlpha(51)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.link_off_rounded, color: AppTheme.error),
+                  const SizedBox(width: 16),
+                  Text(
+                    'Detach current task',
+                    style: AppTheme.body.copyWith(
+                      color: AppTheme.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

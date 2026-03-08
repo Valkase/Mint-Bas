@@ -1,3 +1,5 @@
+// lib/data/repositories/tasks_repository.dart
+
 import 'package:uuid/uuid.dart';
 import '../database/app_database.dart';
 import '../database/daos/task_dao.dart';
@@ -12,7 +14,6 @@ class TaskRepository {
 
   Stream<List<Task>> watchAllTasks() => _taskDao.watchAllTasks();
 
-  // Passthroughs — ids are parameters, not stored state
   Stream<List<Task>> watchTasksForList(String listId) =>
       _taskDao.watchTasksForList(listId);
 
@@ -34,7 +35,6 @@ class TaskRepository {
   Future<int> deleteStep(String id) =>
       _taskDao.deleteStep(id);
 
-  // Builder — constructs companion from simple primitives
   Future<void> createTask({
     required String title,
     String? description,
@@ -45,29 +45,34 @@ class TaskRepository {
     DateTime? deadline,
   }) async {
     final task = TasksCompanion(
-      id: Value(const Uuid().v4()),
-      title: Value(title),
-      description: Value(description),
-      listId: Value(listId),
-      priority: Value(priority),
-      price: Value(price),
-      deadline: Value(deadline),
-      estimatedPomodoro: Value(estimatedPomodoros),
+      id                : Value(const Uuid().v4()),
+      title             : Value(title),
+      description       : Value(description),
+      listId            : Value(listId),
+      priority          : Value(priority),
+      price             : Value(price),
+      deadline          : Value(deadline),
+      estimatedPomodoro : Value(estimatedPomodoros),
     );
     await _taskDao.insertTask(task);
   }
 
-  // Coordinator — multiple steps wrapped in a database transaction
+  // ── BUG N3 FIX ─────────────────────────────────────────────────────────────
+  // completeTask() previously had no guard for already-completed tasks.
+  // A rapid double-tap or any programmatic caller could call this twice,
+  // setting isCompleted=true again AND calling earn() a second time —
+  // silently doubling the coin award. The fix adds a repository-level guard
+  // (not just a UI-level guard) so the invariant holds for every caller.
+  // ─────────────────────────────────────────────────────────────────────────
   Future<void> completeTask(String taskId) async {
     await _taskDao.db.transaction(() async {
       final task = await _taskDao.getTaskById(taskId);
       if (task == null) return;
+      if (task.isCompleted) return; // ← N3: guard against double-completion
 
-      // Data classes are immutable — use copyWith to create updated version
       final updatedTask = task.copyWith(isCompleted: true);
       await _taskDao.updateTask(updatedTask.toCompanion(true));
 
-      // Earn coins — BankingRepository handles all transaction details
       await _bankingRepository.earn(
         task.price,
         relatedTask: task.id,
@@ -76,25 +81,36 @@ class TaskRepository {
     });
   }
 
-  // Flips a step's completion state to its opposite
   Future<void> toggleStep(TaskStep step) async {
     final updated = step.copyWith(isCompleted: !step.isCompleted);
     await _taskDao.updateStep(updated.toCompanion(true));
   }
 
-  // Tags ──────────────────────────────────────────────────────
+  // Tags ──────────────────────────────────────────────────────────────────────
 
   Stream<List<Tag>> watchAllTags() => _taskDao.watchAllTags();
 
   Stream<List<Tag>> watchTagsForTask(String taskId) =>
       _taskDao.watchTagsForTask(taskId);
 
-  Future<void> createTag({required String name, required String color}) =>
-      _taskDao.insertTag(TagsCompanion(
-        id: Value(const Uuid().v4()),
-        name: Value(name),
-        color: Value(color),
-      ));
+  // ── BUG N1 FIX ─────────────────────────────────────────────────────────────
+  // createTag() previously returned Future<void>. The caller (_createTag in
+  // task_detail_screen.dart) had no way to retrieve the new tag's ID and
+  // hardcoded '' as the tagId in the subsequent addTagToTask() call, so newly
+  // created tags were never actually linked to the task.
+  //
+  // Fix: generate the ID here and return it so the caller can pass it straight
+  // to addTagToTask() without any extra round-trip query.
+  // ─────────────────────────────────────────────────────────────────────────
+  Future<String> createTag({required String name, required String color}) async {
+    final id = const Uuid().v4();
+    await _taskDao.insertTag(TagsCompanion(
+      id    : Value(id),
+      name  : Value(name),
+      color : Value(color),
+    ));
+    return id; // ← was void before
+  }
 
   Future<void> addTagToTask({required String taskId, required String tagId}) =>
       _taskDao.insertTaskTag(
