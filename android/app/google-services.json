@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "700678116842",
+    "project_id": "mint-app-a7bcf",
+    "storage_bucket": "mint-app-a7bcf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:700678116842:android:95541c265fc1dfa91fce93",
+        "android_client_info": {
+          "package_name": "com.example.bd_project"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDhzWXE9DX81fIuZsoWYIak6pK3feWc8FM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

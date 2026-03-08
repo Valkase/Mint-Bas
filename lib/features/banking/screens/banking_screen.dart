@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../core/flavor/app_strings.dart';
 import '../../../core/providers/theme_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/database/app_database.dart';
@@ -24,6 +25,7 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
   @override
   Widget build(BuildContext context) {
     ref.watch(themeProvider); // rebuild instantly on theme change
+    final s = AppStrings.of(ref);
     final balanceAsync = ref.watch(balanceStreamProvider);
     final transactionsAsync = ref.watch(transactionsStreamProvider);
 
@@ -39,8 +41,7 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Coin History', style: AppTheme.heading),
-                    // FIX: Dead icon → working settings button
+                    Text(s.bankingScreenTitle, style: AppTheme.heading),
                     GestureDetector(
                       onTap: () {
                         HapticFeedback.lightImpact();
@@ -79,11 +80,13 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
                         balance: balance,
                         totalEarned: 0,
                         totalSpent: 0,
+                        s: s,
                       ),
                       error: (_, __) => _BalanceCard(
                         balance: balance,
                         totalEarned: 0,
                         totalSpent: 0,
+                        s: s,
                       ),
                       data: (transactions) {
                         final earned = transactions
@@ -96,6 +99,7 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
                           balance: balance,
                           totalEarned: earned,
                           totalSpent: spent,
+                          s: s,
                         );
                       },
                     );
@@ -173,7 +177,7 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
 
                 if (filtered.isEmpty) {
                   return SliverToBoxAdapter(
-                    child: _EmptyState(filter: _filter),
+                    child: _EmptyState(filter: _filter, s: s),
                   );
                 }
 
@@ -259,11 +263,13 @@ class _BalanceCard extends StatelessWidget {
   final double balance;
   final double totalEarned;
   final double totalSpent;
+  final AppStrings s;
 
   const _BalanceCard({
     required this.balance,
     required this.totalEarned,
     required this.totalSpent,
+    required this.s,
   });
 
   @override
@@ -305,10 +311,10 @@ class _BalanceCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text('Current Balance', style: AppTheme.caption),
+          Text(s.bankingBalance, style: AppTheme.caption),
 
           const SizedBox(height: 16),
-           Divider(color: AppTheme.surfaceBorder, height: 1),
+          Divider(color: AppTheme.surfaceBorder, height: 1),
           const SizedBox(height: 16),
 
           // Earned / Spent row
@@ -318,7 +324,7 @@ class _BalanceCard extends StatelessWidget {
                 child: Column(
                   children: [
                     Text(
-                      'Total Earned',
+                      s.bankingEarned,
                       style: AppTheme.caption.copyWith(fontSize: 11),
                     ),
                     const SizedBox(height: 4),
@@ -342,7 +348,7 @@ class _BalanceCard extends StatelessWidget {
                 child: Column(
                   children: [
                     Text(
-                      'Total Spent',
+                      s.bankingSpent,
                       style: AppTheme.caption.copyWith(fontSize: 11),
                     ),
                     const SizedBox(height: 4),
@@ -513,15 +519,16 @@ class _TransactionRow extends StatelessWidget {
 
 class _EmptyState extends StatelessWidget {
   final _TransactionFilter filter;
-  const _EmptyState({required this.filter});
+  final AppStrings s;
+  const _EmptyState({required this.filter, required this.s});
 
-  String get _message {
+  String _message(AppStrings s) {
     return switch (filter) {
       _TransactionFilter.earned =>
       'No coins earned yet.\nComplete tasks to start earning.',
       _TransactionFilter.spent =>
       'Nothing spent yet.\nVisit the Rewards tab to redeem coins.',
-      _ => 'No transactions yet.\nComplete your first task to get started.',
+      _ => s.bankingEmpty,
     };
   }
 
@@ -546,7 +553,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Text(
-            _message,
+            _message(s),
             style: AppTheme.caption.copyWith(height: 1.7),
             textAlign: TextAlign.center,
           ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/flavor/app_strings.dart';
 import '../../../core/providers/theme_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/database/app_database.dart';
@@ -30,12 +31,13 @@ class AllTasksScreen extends ConsumerStatefulWidget {
 class _AllTasksScreenState extends ConsumerState<AllTasksScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabCtrl;
-  static const _tabs = ['Today', 'Tomorrow', 'This Week', 'Planned', 'All'];
+  List<String> _buildTabs(AppStrings s) =>
+      [s.tasksToday, 'Tomorrow', 'This Week', 'Planned', 'All'];
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: _tabs.length, vsync: this, initialIndex: 4);
+    _tabCtrl = TabController(length: 5, vsync: this, initialIndex: 4);
     _tabCtrl.addListener(() => setState(() {}));
   }
 
@@ -45,6 +47,8 @@ class _AllTasksScreenState extends ConsumerState<AllTasksScreen>
   @override
   Widget build(BuildContext context) {
     ref.watch(themeProvider);
+    final s = AppStrings.of(ref);
+    final tabs = _buildTabs(s);
     final tasksAsync    = ref.watch(allTasksStreamProvider);
     final listsAsync    = ref.watch(allListsStreamProvider);
     final projectsAsync = ref.watch(allProjectsStreamProvider);
@@ -68,7 +72,7 @@ class _AllTasksScreenState extends ConsumerState<AllTasksScreen>
                 children: [
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('My Tasks', style: AppTheme.heading),
+                      Text(s.tasksScreenTitle, style: AppTheme.heading),
                       const SizedBox(height: 2),
                       tasksAsync.when(
                         loading: () => const SizedBox.shrink(),
@@ -98,10 +102,10 @@ class _AllTasksScreenState extends ConsumerState<AllTasksScreen>
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _tabs.length,
+                itemCount: tabs.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (_, i) => _TabChip(
-                  label: _tabs[i], selected: _tabCtrl.index == i,
+                  label: tabs[i], selected: _tabCtrl.index == i,
                   onTap: () { HapticFeedback.selectionClick(); _tabCtrl.animateTo(i); },
                 ),
               ),
@@ -114,11 +118,11 @@ class _AllTasksScreenState extends ConsumerState<AllTasksScreen>
                 data: (allTasks) => TabBarView(
                   controller: _tabCtrl,
                   children: [
-                    _TasksTabView(tasks: allTasks.where((t) => _isToday(t.deadline)).toList(), listsMap: listsMap, projectsMap: projectsMap, emptyMessage: 'Nothing due today.', emptySubMessage: 'Enjoy the breathing room.'),
-                    _TasksTabView(tasks: allTasks.where((t) => _isTomorrow(t.deadline)).toList(), listsMap: listsMap, projectsMap: projectsMap, emptyMessage: 'Nothing due tomorrow.', emptySubMessage: 'Get ahead on something today.'),
-                    _TasksTabView(tasks: allTasks.where((t) => _isThisWeek(t.deadline)).toList(), listsMap: listsMap, projectsMap: projectsMap, emptyMessage: 'Clear week ahead.', emptySubMessage: 'Add tasks with deadlines to plan.'),
-                    _TasksTabView(tasks: allTasks.where((t) => _isPlanned(t.deadline)).toList(), listsMap: listsMap, projectsMap: projectsMap, emptyMessage: 'Nothing planned yet.', emptySubMessage: 'Long-horizon tasks will show here.'),
-                    _TasksTabView(tasks: allTasks, listsMap: listsMap, projectsMap: projectsMap, emptyMessage: 'No tasks yet.', emptySubMessage: 'Tap + to add your first task.'),
+                    _TasksTabView(tasks: allTasks.where((t) => _isToday(t.deadline)).toList(), listsMap: listsMap, projectsMap: projectsMap, emptyMessage: 'Nothing due today.', emptySubMessage: 'Enjoy the breathing room.', strings: s),
+                    _TasksTabView(tasks: allTasks.where((t) => _isTomorrow(t.deadline)).toList(), listsMap: listsMap, projectsMap: projectsMap, emptyMessage: 'Nothing due tomorrow.', emptySubMessage: 'Get ahead on something today.', strings: s),
+                    _TasksTabView(tasks: allTasks.where((t) => _isThisWeek(t.deadline)).toList(), listsMap: listsMap, projectsMap: projectsMap, emptyMessage: 'Clear week ahead.', emptySubMessage: 'Add tasks with deadlines to plan.', strings: s),
+                    _TasksTabView(tasks: allTasks.where((t) => _isPlanned(t.deadline)).toList(), listsMap: listsMap, projectsMap: projectsMap, emptyMessage: 'Nothing planned yet.', emptySubMessage: 'Long-horizon tasks will show here.', strings: s),
+                    _TasksTabView(tasks: allTasks, listsMap: listsMap, projectsMap: projectsMap, emptyMessage: 'No tasks yet.', emptySubMessage: 'Tap + to add your first task.', strings: s),
                   ],
                 ),
               ),
@@ -170,7 +174,8 @@ class _TasksTabView extends StatefulWidget {
   final Map<String, TaskList> listsMap;
   final Map<String, Project> projectsMap;
   final String emptyMessage, emptySubMessage;
-  const _TasksTabView({required this.tasks, required this.listsMap, required this.projectsMap, required this.emptyMessage, required this.emptySubMessage});
+  final AppStrings strings;
+  const _TasksTabView({required this.tasks, required this.listsMap, required this.projectsMap, required this.emptyMessage, required this.emptySubMessage, required this.strings});
   @override State<_TasksTabView> createState() => _TasksTabViewState();
 }
 
@@ -202,7 +207,7 @@ class _TasksTabViewState extends State<_TasksTabView> {
                 AnimatedRotation(turns: _completedExpanded ? 0.25 : 0, duration: const Duration(milliseconds: 200),
                     child:  Icon(Icons.chevron_right, color: AppTheme.textSecondary, size: 18)),
                 const SizedBox(width: 8),
-                Text('Completed', style: AppTheme.label.copyWith(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
+                Text(widget.strings.tasksDone, style: AppTheme.label.copyWith(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
                 const SizedBox(width: 6),
                 Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(color: AppTheme.primary.withAlpha(30), borderRadius: BorderRadius.circular(10)),
@@ -275,7 +280,7 @@ class _TaskRow extends ConsumerWidget {
                 // Breadcrumb
                 if (breadcrumb != null) ...[
                   Row(children: [
-                     Icon(Icons.folder_outlined, size: 10, color: AppTheme.textDisabled),
+                    Icon(Icons.folder_outlined, size: 10, color: AppTheme.textDisabled),
                     const SizedBox(width: 4),
                     Expanded(child: Text(breadcrumb, style: AppTheme.caption.copyWith(fontSize: 10, color: AppTheme.textDisabled), maxLines: 1, overflow: TextOverflow.ellipsis)),
                   ]),
@@ -313,7 +318,7 @@ class _TaskRow extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(color: AppTheme.primary.withAlpha(25), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppTheme.primary.withAlpha(60))),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                     Icon(Icons.timer_outlined, color: AppTheme.primary, size: 12),
+                    Icon(Icons.timer_outlined, color: AppTheme.primary, size: 12),
                     const SizedBox(width: 4),
                     Text('Focus', style: AppTheme.caption.copyWith(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600)),
                   ]),
@@ -371,6 +376,7 @@ class _CreateTaskSheetState extends ConsumerState<_CreateTaskSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(ref);
     final allProjects = ref.watch(allProjectsStreamProvider).value ?? [];
     final allLists    = ref.watch(allListsStreamProvider).value ?? [];
     final filteredLists = _selectedProject != null
@@ -444,7 +450,7 @@ class _CreateTaskSheetState extends ConsumerState<_CreateTaskSheet> {
                   child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(14)),
-                      child: Text('Add Task', style: AppTheme.label.copyWith(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15), textAlign: TextAlign.center)))),
+                      child: Text(s.tasksAddButton, style: AppTheme.label.copyWith(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15), textAlign: TextAlign.center)))),
         ]),
       ),
     );

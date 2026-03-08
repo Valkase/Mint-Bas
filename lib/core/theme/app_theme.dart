@@ -1,11 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../flavor/app_flavor.dart';
 
 // Forward declaration — theme_provider imports AppTheme, AppTheme doesn't
 // import theme_provider. The apply() method receives a ThemeState-like duck.
 typedef _ThemeState = ({bool isDark, dynamic accent});
 
 class AppTheme {
+  // ── Flavor ────────────────────────────────────────────────────────────────
+  // Set once at startup by main() before runApp().
+  // apply() reads this to override primary colors for Basboosa.
+
+  static AppFlavor _flavor = AppFlavor.mint;
+
+  /// Call this once in main() after detecting the flavor, before runApp().
+  static void configure(AppFlavor flavor) {
+    _flavor = flavor;
+    // If Basboosa: override primary to warm terracotta right away,
+    // so the first frame already has the correct color even before
+    // the ThemeNotifier calls apply().
+    if (flavor == AppFlavor.basboosa) {
+      primary      = const Color(0xFFBF7A62);
+      primaryLight = const Color(0xFFD4967E);
+      primaryMuted = const Color(0xFF3A2820);
+      success      = primary;
+      pomodoroWork = primary;
+    }
+  }
+
   // ── Mutable static fields ─────────────────────────────────────────────────
   // These are NOT const — they are swapped at runtime by apply().
   // Every screen that reads AppTheme.background etc. automatically sees
@@ -74,7 +96,21 @@ class AppTheme {
       primaryMuted  = accent.lightPrimaryMuted  as Color;
     }
 
-    // Semantic colors follow accent
+    // ── Flavor override — always applied AFTER accent ─────────────────────
+    // Basboosa's terracotta replaces whatever the accent system just set.
+    if (_flavor == AppFlavor.basboosa) {
+      if (isDark) {
+        primary      = const Color(0xFFBF7A62);
+        primaryLight = const Color(0xFFD4967E);
+        primaryMuted = const Color(0xFF3A2820);
+      } else {
+        primary      = const Color(0xFFAD6B53);
+        primaryLight = const Color(0xFFC4826A);
+        primaryMuted = const Color(0xFFF5EBE7);
+      }
+    }
+
+    // Semantic colors follow primary
     success  = primary;
     warning  = isDark
         ? const Color(0xFFCFAF6E)

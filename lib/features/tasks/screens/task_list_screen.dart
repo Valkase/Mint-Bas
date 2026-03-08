@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/flavor/app_strings.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/database/app_database.dart';
 import '../providers/tag_providers.dart';
@@ -24,6 +25,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     final listAsync = ref.watch(listByIdProvider(widget.listId));
     final tasksAsync = ref.watch(tasksStreamProvider(widget.listId));
 
+    final s = AppStrings.of(ref);
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
@@ -34,7 +36,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
             if (list == null) {
               return const Center(child: Text('List not found'));
             }
-            return _buildBody(context, list, tasksAsync);
+            return _buildBody(context, list, tasksAsync, s);
           },
         ),
       ),
@@ -50,6 +52,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
       BuildContext context,
       TaskList list,
       AsyncValue<List<Task>> tasksAsync,
+      AppStrings s,
       ) {
     return tasksAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -99,7 +102,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                             minHeight: 6,
                             backgroundColor: AppTheme.surface,
                             valueColor:
-                             AlwaysStoppedAnimation(AppTheme.primary),
+                            AlwaysStoppedAnimation(AppTheme.primary),
                           ),
                         ),
                       ),
@@ -120,7 +123,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
             ),
             Expanded(
               child: tasks.isEmpty
-                  ? _EmptyState(onAdd: () => _showCreateTaskSheet(context))
+                  ? _EmptyState(s: s, onAdd: () => _showCreateTaskSheet(context))
                   : ListView(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
                 children: [
@@ -139,7 +142,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                         const Icon(Icons.check_circle_outline,
                             color: Colors.white, size: 22),
                         const SizedBox(width: 10),
-                        Text('Done!',
+                        Text(s.tasksDone,
                             style: AppTheme.label.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600)),
@@ -151,21 +154,22 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                       onTap: () => context.push('/task/${task.id}'),
                       onComplete: () => _completeTask(task),
                       onFocus: () => _startFocus(context, task),
+                      s: s,
                     ),
                   )),
                   if (completed.isNotEmpty) ...[
                     const SizedBox(height: 20),
                     Row(children: [
-                       Expanded(
+                      Expanded(
                           child: Divider(
                               color: AppTheme.surfaceBorder, thickness: 1)),
                       Padding(
                           padding:
                           const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text('COMPLETED',
+                          child: Text(s.tasksDone.toUpperCase(),
                               style: AppTheme.caption.copyWith(
                                   fontSize: 10, letterSpacing: 1.2))),
-                       Expanded(
+                      Expanded(
                           child: Divider(
                               color: AppTheme.surfaceBorder, thickness: 1)),
                     ]),
@@ -177,7 +181,8 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                             completing: false,
                             onTap: () => context.push('/task/${task.id}'),
                             onComplete: () {},
-                            onFocus: null))),
+                            onFocus: null,
+                            s: s))),
                   ],
                 ],
               ),
@@ -232,12 +237,14 @@ class _TaskCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onComplete;
   final VoidCallback? onFocus;
+  final AppStrings s;
   const _TaskCard(
       {required this.task,
         required this.completing,
         required this.onTap,
         required this.onComplete,
-        required this.onFocus});
+        required this.onFocus,
+        required this.s});
 
   Color get _priorityColor {
     return switch (task.priority) {
@@ -308,7 +315,7 @@ class _TaskCard extends StatelessWidget {
                   if (task.price > 0) _CoinBadge(coins: task.price.toInt()),
                   if (task.deadline != null) ...[
                     const SizedBox(width: 6),
-                    _DeadlineBadge(deadline: task.deadline!)
+                    _DeadlineBadge(deadline: task.deadline!, s: s)
                   ],
                   const Spacer(),
                   if (onFocus != null)
@@ -323,7 +330,7 @@ class _TaskCard extends StatelessWidget {
                             border: Border.all(
                                 color: AppTheme.primary.withAlpha(76))),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                           Icon(Icons.timer_outlined,
+                          Icon(Icons.timer_outlined,
                               color: AppTheme.primary, size: 13),
                           const SizedBox(width: 4),
                           Text('Focus',
@@ -353,7 +360,7 @@ class _CoinBadge extends StatelessWidget {
             color: AppTheme.coral.withAlpha(38),
             borderRadius: BorderRadius.circular(6)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-           Icon(Icons.monetization_on_outlined,
+          Icon(Icons.monetization_on_outlined,
               size: 11, color: AppTheme.coral),
           const SizedBox(width: 3),
           Text('$coins',
@@ -364,7 +371,8 @@ class _CoinBadge extends StatelessWidget {
 
 class _DeadlineBadge extends StatelessWidget {
   final DateTime deadline;
-  const _DeadlineBadge({required this.deadline});
+  final AppStrings s;
+  const _DeadlineBadge({required this.deadline, required this.s});
   @override
   Widget build(BuildContext context) {
     final diff = deadline.difference(DateTime.now()).inDays;
@@ -377,7 +385,7 @@ class _DeadlineBadge extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
         decoration: BoxDecoration(
             color: color.withAlpha(25), borderRadius: BorderRadius.circular(6)),
-        child: Text(diff < 0 ? 'Overdue' : diff == 0 ? 'Today' : '${diff}d left',
+        child: Text(diff < 0 ? s.tasksOverdue : diff == 0 ? s.tasksToday : '${diff}d left',
             style: AppTheme.label.copyWith(color: color, fontSize: 11)));
   }
 }
@@ -446,7 +454,7 @@ class _CoinEarnedOverlayState extends State<_CoinEarnedOverlay>
                                           blurRadius: 20)
                                     ]),
                                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                   Icon(Icons.monetization_on,
+                                  Icon(Icons.monetization_on,
                                       color: AppTheme.coral, size: 18),
                                   const SizedBox(width: 6),
                                   Text('+${widget.coins} coins',
@@ -459,17 +467,18 @@ class _CoinEarnedOverlayState extends State<_CoinEarnedOverlay>
 
 class _EmptyState extends StatelessWidget {
   final VoidCallback onAdd;
-  const _EmptyState({required this.onAdd});
+  final AppStrings s;
+  const _EmptyState({required this.onAdd, required this.s});
   @override
   Widget build(BuildContext context) {
     return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-           Icon(Icons.checklist_rtl_outlined,
+          Icon(Icons.checklist_rtl_outlined,
               size: 48, color: AppTheme.textDisabled),
           const SizedBox(height: 16),
-          Text('No tasks yet', style: AppTheme.body),
+          Text(s.tasksEmptyTitle, style: AppTheme.body),
           const SizedBox(height: 6),
-          Text('Add your first task to get started.',
+          Text(s.tasksEmptyBody,
               style: AppTheme.caption, textAlign: TextAlign.center),
           const SizedBox(height: 24),
           GestureDetector(
@@ -479,7 +488,7 @@ class _EmptyState extends StatelessWidget {
                   decoration: BoxDecoration(
                       color: AppTheme.primary,
                       borderRadius: BorderRadius.circular(12)),
-                  child: Text('Add a task',
+                  child: Text(s.tasksAddButton,
                       style: AppTheme.label.copyWith(color: Colors.white))))
         ]));
   }

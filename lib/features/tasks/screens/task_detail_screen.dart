@@ -307,7 +307,7 @@ class _FocusButton extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-             Icon(
+            Icon(
               Icons.timer_outlined,
               color: AppTheme.primary,
               size: 20,
@@ -1101,7 +1101,7 @@ class _SuccessOverlay extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                       Icon(Icons.monetization_on,
+                      Icon(Icons.monetization_on,
                           color: AppTheme.coral, size: 18),
                       const SizedBox(width: 6),
                       Text(

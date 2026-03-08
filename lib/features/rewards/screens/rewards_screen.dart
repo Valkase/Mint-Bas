@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/flavor/app_strings.dart';
 import '../../../core/providers/theme_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/database/app_database.dart';
@@ -14,6 +15,7 @@ class RewardsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(themeProvider); // rebuild instantly on theme change
+    final s = AppStrings.of(ref);
     final balanceAsync = ref.watch(balanceStreamProvider);
     final rewardsAsync = ref.watch(rewardsStreamProvider);
 
@@ -30,12 +32,11 @@ class RewardsScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // FIX: Expanded prevents overflow when right side has multiple widgets
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Your Rewards', style: AppTheme.heading),
+                          Text(s.rewardsScreenTitle, style: AppTheme.heading),
                           const SizedBox(height: 4),
                           Text(
                             'Celebrate your progress with small joys.',
@@ -106,6 +107,7 @@ class RewardsScreen extends ConsumerWidget {
                   return SliverToBoxAdapter(
                     child: _EmptyState(
                       onAdd: () => _showCreateRewardSheet(context, ref),
+                      s: s,
                     ),
                   );
                 }
@@ -135,8 +137,9 @@ class RewardsScreen extends ConsumerWidget {
                         return _RewardCard(
                           reward: reward,
                           canAfford: canAfford,
-                          onRedeem: () => _redeem(context, ref, reward, balance),
+                          onRedeem: () => _redeem(context, ref, reward, balance, s),
                           onLongPress: () => _showCardOptions(context, ref, reward),
+                          s: s,
                         );
                       },
                       childCount: rewards.length + 1,
@@ -156,6 +159,7 @@ class RewardsScreen extends ConsumerWidget {
       WidgetRef ref,
       RewardItem reward,
       double balance,
+      AppStrings s,
       ) async {
     if (balance < reward.price) return;
 
@@ -204,7 +208,7 @@ class RewardsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  '${reward.price.toStringAsFixed(0)} coins',
+                  '${reward.price.toStringAsFixed(0)} ${s.rewardsCost}',
                   style: AppTheme.caption.copyWith(
                     color: const Color(0xFFEAB308),
                     fontWeight: FontWeight.w600,
@@ -218,14 +222,14 @@ class RewardsScreen extends ConsumerWidget {
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(
-              'Cancel',
+              s.cancel,
               style: AppTheme.label.copyWith(color: AppTheme.textSecondary),
             ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-              'Redeem',
+              s.rewardsRedeem,
               style: AppTheme.label.copyWith(
                 color: AppTheme.primary,
                 fontWeight: FontWeight.w600,
@@ -345,12 +349,14 @@ class _RewardCard extends StatelessWidget {
   final bool canAfford;
   final VoidCallback onRedeem;
   final VoidCallback onLongPress;
+  final AppStrings s;
 
   const _RewardCard({
     required this.reward,
     required this.canAfford,
     required this.onRedeem,
     required this.onLongPress,
+    required this.s,
   });
 
   IconData get _icon {
@@ -533,7 +539,7 @@ class _RewardCard extends StatelessWidget {
                                 ),
                                 child: Center(
                                   child: Text(
-                                    'Redeem',
+                                    s.rewardsRedeem,
                                     style: AppTheme.caption.copyWith(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
@@ -745,7 +751,8 @@ class _RedeemedOverlayState extends State<_RedeemedOverlay>
 
 class _EmptyState extends StatelessWidget {
   final VoidCallback onAdd;
-  const _EmptyState({required this.onAdd});
+  final AppStrings s;
+  const _EmptyState({required this.onAdd, required this.s});
 
   @override
   Widget build(BuildContext context) {
@@ -764,11 +771,11 @@ class _EmptyState extends StatelessWidget {
                 color: AppTheme.primary, size: 28),
           ),
           const SizedBox(height: 20),
-          Text('No rewards yet.',
+          Text(s.rewardsEmptyTitle,
               style: AppTheme.body.copyWith(fontWeight: FontWeight.w500)),
           const SizedBox(height: 6),
           Text(
-            'Add things you enjoy so you have\nsomething to look forward to.',
+            s.rewardsEmptyBody,
             style: AppTheme.caption.copyWith(height: 1.6),
             textAlign: TextAlign.center,
           ),
@@ -784,7 +791,7 @@ class _EmptyState extends StatelessWidget {
                 border: Border.all(color: AppTheme.primary.withAlpha(60)),
               ),
               child: Text(
-                'Add your first reward',
+                s.rewardsAddButton,
                 style: AppTheme.label.copyWith(color: AppTheme.primary),
               ),
             ),
@@ -1158,12 +1165,12 @@ class _EditRewardSheetState extends State<_EditRewardSheet> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide:
-                 BorderSide(color: AppTheme.surfaceBorder),
+                BorderSide(color: AppTheme.surfaceBorder),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide:
-                 BorderSide(color: AppTheme.surfaceBorder),
+                BorderSide(color: AppTheme.surfaceBorder),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
