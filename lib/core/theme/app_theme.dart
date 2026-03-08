@@ -1,37 +1,20 @@
+// lib/core/theme/app_theme.dart
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../flavor/app_flavor.dart';
 
-// Forward declaration — theme_provider imports AppTheme, AppTheme doesn't
-// import theme_provider. The apply() method receives a ThemeState-like duck.
-typedef _ThemeState = ({bool isDark, dynamic accent});
-
 class AppTheme {
   // ── Flavor ────────────────────────────────────────────────────────────────
-  // Set once at startup by main() before runApp().
-  // apply() reads this to override primary colors for Basboosa.
-
   static AppFlavor _flavor = AppFlavor.mint;
 
   /// Call this once in main() after detecting the flavor, before runApp().
+  /// FIX: no longer hardcodes basboosa colors — apply() handles everything.
   static void configure(AppFlavor flavor) {
     _flavor = flavor;
-    // If Basboosa: override primary to warm terracotta right away,
-    // so the first frame already has the correct color even before
-    // the ThemeNotifier calls apply().
-    if (flavor == AppFlavor.basboosa) {
-      primary      = const Color(0xFFBF7A62);
-      primaryLight = const Color(0xFFD4967E);
-      primaryMuted = const Color(0xFF3A2820);
-      success      = primary;
-      pomodoroWork = primary;
-    }
   }
 
   // ── Mutable static fields ─────────────────────────────────────────────────
-  // These are NOT const — they are swapped at runtime by apply().
-  // Every screen that reads AppTheme.background etc. automatically sees
-  // the new values after apply() is called and the widget tree rebuilds.
 
   static Color background    = const Color(0xFF1E1C1A);
   static Color surface       = const Color(0xFF262320);
@@ -42,11 +25,9 @@ class AppTheme {
   static Color primaryLight  = const Color(0xFF93C3A3);
   static Color primaryMuted  = const Color(0xFF2F3A34);
 
-  // Warm gold — coins, balance, reward accents
   static Color gold          = const Color(0xFFCFAF6E);
   static Color goldLight     = const Color(0xFFDFC98A);
 
-  // Alias kept so all existing AppTheme.coral references still compile
   static Color get coral      => gold;
   static Color get coralLight => goldLight;
 
@@ -81,7 +62,6 @@ class AppTheme {
       primaryLight  = accent.darkPrimaryLight  as Color;
       primaryMuted  = accent.darkPrimaryMuted  as Color;
     } else {
-      // ── Light mode — warm off-white paper ─────────────────────────────────
       background    = const Color(0xFFF6F1E8);
       surface       = const Color(0xFFFFFFFF);
       surfaceBorder = const Color(0xFFE4DDD3);
@@ -96,36 +76,18 @@ class AppTheme {
       primaryMuted  = accent.lightPrimaryMuted  as Color;
     }
 
-    // ── Flavor override — always applied AFTER accent ─────────────────────
-    // Basboosa's terracotta replaces whatever the accent system just set.
-    if (_flavor == AppFlavor.basboosa) {
-      if (isDark) {
-        primary      = const Color(0xFFBF7A62);
-        primaryLight = const Color(0xFFD4967E);
-        primaryMuted = const Color(0xFF3A2820);
-      } else {
-        primary      = const Color(0xFFAD6B53);
-        primaryLight = const Color(0xFFC4826A);
-        primaryMuted = const Color(0xFFF5EBE7);
-      }
-    }
+    // FIX: removed basboosa hardcoded override — both flavors now use
+    // the full accent + dark/light system identically.
 
     // Semantic colors follow primary
-    success  = primary;
-    warning  = isDark
-        ? const Color(0xFFCFAF6E)
-        : const Color(0xFFAF8E4A);
-    gold     = isDark
-        ? const Color(0xFFCFAF6E)
-        : const Color(0xFFAF8E4A);
-    goldLight = isDark
-        ? const Color(0xFFDFC98A)
-        : const Color(0xFF9C7C3C);
+    success      = primary;
+    warning      = isDark ? const Color(0xFFCFAF6E) : const Color(0xFFAF8E4A);
+    gold         = isDark ? const Color(0xFFCFAF6E) : const Color(0xFFAF8E4A);
+    goldLight    = isDark ? const Color(0xFFDFC98A) : const Color(0xFF9C7C3C);
     pomodoroWork = primary;
   }
 
   // ── Text Styles ────────────────────────────────────────────────────────────
-  // These read from the mutable fields above at call time.
 
   static TextStyle get display => GoogleFonts.poppins(
     fontSize: 32,
@@ -161,7 +123,7 @@ class AppTheme {
 
   // ── ThemeData generators ───────────────────────────────────────────────────
 
-  static ThemeData get dark => _buildTheme(Brightness.dark);
+  static ThemeData get dark  => _buildTheme(Brightness.dark);
   static ThemeData get light => _buildTheme(Brightness.light);
 
   static ThemeData _buildTheme(Brightness brightness) => ThemeData(
@@ -179,39 +141,9 @@ class AppTheme {
           ? const Color(0xFF1E1C1A)
           : const Color(0xFFFFFFFF),
       error: error,
-      onError: const Color(0xFFFFFFFF),
+      onError: Colors.white,
       surface: surface,
       onSurface: textPrimary,
-    ),
-    cardTheme: CardThemeData(
-      color: surface,
-      elevation: 0,
-      shadowColor: Colors.black.withAlpha(30),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: surfaceBorder),
-      ),
-      margin: EdgeInsets.zero,
-    ),
-    appBarTheme: AppBarTheme(
-      backgroundColor: background,
-      elevation: 0,
-      shadowColor: Colors.transparent,
-      centerTitle: false,
-      titleTextStyle: heading,
-      iconTheme: IconThemeData(color: textSecondary),
-    ),
-    dividerTheme: DividerThemeData(
-      color: surfaceBorder,
-      thickness: 1,
-      space: 0,
-    ),
-    bottomNavigationBarTheme: BottomNavigationBarThemeData(
-      backgroundColor: surface,
-      selectedItemColor: primary,
-      unselectedItemColor: textSecondary,
-      elevation: 0,
-      type: BottomNavigationBarType.fixed,
     ),
   );
 }

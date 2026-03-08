@@ -28,6 +28,19 @@ android {
         versionName = flutter.versionName
     }
 
+    // ── Flavors ───────────────────────────────────────────────────────────────
+    flavorDimensions += "app"
+
+    productFlavors {
+        create("mint") {
+            dimension = "app"
+        }
+        create("basboosa") {
+            dimension = "app"
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")

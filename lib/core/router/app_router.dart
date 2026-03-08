@@ -70,15 +70,17 @@ final appRouter = GoRouter(
         initialTaskId: state.uri.queryParameters['taskId'],
       ),
     ),
+
+    // FIX: singular '/task/:id' — matches context.push('/task/${task.id}')
     GoRoute(
-      path:    '/tasks/:id',
+      path:    '/task/:id',
       builder: (_, state) => TaskDetailScreen(
         taskId: state.pathParameters['id']!,
       ),
     ),
 
-    // ── List detail (drilling into a specific task list) ───────────────────
-    GoRoute(                                          // ← this was missing
+    // FIX: singular '/list/:id' — matches context.push('/list/${list.id}')
+    GoRoute(
       path:    '/list/:id',
       builder: (_, state) => TaskListScreen(
         listId: state.pathParameters['id']!,
@@ -89,12 +91,15 @@ final appRouter = GoRouter(
       path:    '/projects',
       builder: (_, __) => const ProjectsScreen(),
     ),
+
+    // FIX: singular '/project/:id' — matches context.push('/project/${project.id}')
     GoRoute(
-      path:    '/projects/:id',
+      path:    '/project/:id',
       builder: (_, state) => ProjectDetailScreen(
         projectId: state.pathParameters['id']!,
       ),
     ),
+
     GoRoute(
       path:    '/debug',
       builder: (_, __) => const DebugScreen(),

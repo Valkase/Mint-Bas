@@ -24,15 +24,12 @@ void main() async {
   );
 
   // ── Flavor detection ───────────────────────────────────────────────────────
-  // Runs before runApp so the flavor is available synchronously everywhere.
-  final flavor           = await DeviceFlavorService.instance.detectFlavor();
-  final onboardingDone   = await DeviceFlavorService.instance.isOnboardingComplete();
+  final flavor         = await DeviceFlavorService.instance.detectFlavor();
+  final onboardingDone = await DeviceFlavorService.instance.isOnboardingComplete();
 
-  // Write the onboarding flag so the router redirect knows what to do.
   appOnboardingComplete = onboardingDone;
 
   // ── Theme configuration ────────────────────────────────────────────────────
-  // Basboosa gets a warm terracotta accent; Mint keeps its signature green.
   AppTheme.configure(flavor);
 
   // ── Notifications ──────────────────────────────────────────────────────────
@@ -45,7 +42,6 @@ void main() async {
   runApp(
     ProviderScope(
       overrides: [
-        // Bake the detected flavor into the provider tree — never changes.
         flavorProvider.overrideWithValue(flavor),
         databaseProvider.overrideWithValue(db),
       ],

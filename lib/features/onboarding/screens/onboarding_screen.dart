@@ -6,11 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/flavor/app_flavor.dart';
 import '../../../core/flavor/app_strings.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/services/device_flavor_service.dart';
 import '../../../core/theme/app_theme.dart';
-
-// Onboarding accent color is flavor-aware (matches AppTheme.primary at
-// the time this screen is built, which has already been configured).
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
@@ -33,6 +31,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   Future<void> _finish() async {
     await DeviceFlavorService.instance.markOnboardingComplete();
+    // FIX: update the in-memory flag so the router redirect lets us through
+    appOnboardingComplete = true;
     if (mounted) context.go('/');
   }
 
@@ -186,7 +186,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   }
 }
 
-// ── Slide ─────────────────────────────────────────────────────────────────────
+// ── Slide Data ────────────────────────────────────────────────────────────────
 
 class _SlideData {
   final IconData icon;
@@ -241,7 +241,6 @@ class _Slide extends StatelessWidget {
               color:         AppTheme.textPrimary,
               fontFamily:    'Poppins',
               height:        1.25,
-              // Arabic text looks better center-aligned
               letterSpacing: flavor == AppFlavor.basboosa ? 0 : -0.5,
             ),
             textAlign: TextAlign.center,
