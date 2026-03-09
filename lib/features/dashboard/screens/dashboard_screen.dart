@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import '../../../core/flavor/app_flavor.dart';
+import '../../../core/flavor/app_strings.dart';
+import '../../../core/providers/user_name_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/database/app_database.dart';
 import '../../../shared/providers/repository_providers.dart';
 import '../../banking/providers/banking_notifier.dart';
 import '../providers/dashboard_provider.dart';
 
-// ── _ListStat ──────────────────────────────────────────────────────────────
+// ── _ListStat ─────────────────────────────────────────────────────────────
 
 class _ListStat {
   final TaskList list;
@@ -26,20 +29,8 @@ class _ListStat {
   double get rate => total == 0 ? 0.0 : completed / total;
 }
 
-// ── _listStatsProvider ────────────────────────────────────────────────────────
-//
-// BUG 5 FIX:
-// The old implementation called `watchTasksForList(list.id).first` inside
-// `asyncMap`. That subscribes and immediately cancels a brand-new Drift stream
-// for every list on every outer emission. Under rapid DB writes this leaks
-// short-lived subscriptions and makes the rankings stale — task completions
-// alone never trigger `watchAllLists`, so the stats would freeze until
-// something else caused a list-table write.
-//
-// Fix: replace `.first` on the watch-stream with `getTasksForList()`, which is
-// a plain Future<List<Task>> query — no stream subscription is opened or left
-// dangling. Rankings now update correctly whenever any list or task changes.
-// ─────────────────────────────────────────────────────────────────────────────
+// ── _listStatsProvider ───────────────────────────────────────────────────────
+
 final _listStatsProvider = StreamProvider<List<_ListStat>>((ref) {
   final taskDao    = ref.watch(taskDaoProvider);
   final projectDao = ref.watch(projectDaoProvider);
@@ -47,8 +38,6 @@ final _listStatsProvider = StreamProvider<List<_ListStat>>((ref) {
   return projectDao.watchAllLists().asyncMap((allLists) async {
     final stats = <_ListStat>[];
     for (final list in allLists) {
-      // ← was: await taskDao.watchTasksForList(list.id).first
-      //   (stream subscription leak + stale data on task-only writes)
       final tasks = await taskDao.getTasksForList(list.id);
       if (tasks.isEmpty) continue;
       stats.add(_ListStat(
@@ -62,7 +51,7 @@ final _listStatsProvider = StreamProvider<List<_ListStat>>((ref) {
   });
 });
 
-// ── DashboardScreen ────────────────────────────────────────────────────────
+// ── DashboardScreen ───────────────────────────────────────────────────────
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -84,12 +73,10 @@ class DashboardScreen extends ConsumerWidget {
               const SizedBox(height: 8),
               statsAsync.when(
                 loading: () => Padding(
-                  padding: EdgeInsets.only(top: 60),
+                  padding: const EdgeInsets.only(top: 60),
                   child: Center(
                     child: CircularProgressIndicator(
-                      color: AppTheme.primary,
-                      strokeWidth: 2,
-                    ),
+                        color: AppTheme.primary, strokeWidth: 2),
                   ),
                 ),
                 error: (e, _) => Padding(
@@ -103,16 +90,16 @@ class DashboardScreen extends ConsumerWidget {
                   children: [
                     _ProgressRing(sessions: stats.allSessions),
                     _StatChips(
-                      minutesFocused    : stats.totalMinutesFocused,
-                      balance           : balanceAsync.value ?? 0,
-                      sessionsCompleted : stats.allSessions
+                      minutesFocused   : stats.totalMinutesFocused,
+                      balance          : balanceAsync.value ?? 0,
+                      sessionsCompleted: stats.allSessions
                           .where((s) => s.type == 'work')
                           .length,
                     ),
                     _PomodoroTimeline(sessions: stats.allSessions),
                     _FocusBarChart(sessions: stats.allSessions),
                     const _MostProductiveList(),
-                    const _EncouragementCard(),
+                    const _EncouragementCard(), // ← now reads from AppConfig
                   ],
                 ),
               ),
@@ -126,10 +113,10 @@ class DashboardScreen extends ConsumerWidget {
 
 // ── Header ────────────────────────────────────────────────────
 
-class _Header extends StatelessWidget {
+class _Header extends ConsumerWidget {
   const _Header();
 
-  String get _greeting {
+  String _timeGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) return 'Good morning';
     if (hour < 17) return 'Good afternoon';
@@ -137,35 +124,37 @@ class _Header extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final flavor = ref.read(flavorProvider);
+
+    final String nameSuffix;
+    if (flavor == AppFlavor.basboosa) {
+      nameSuffix = AppStrings.of(ref).greetingSuffix;
+    } else {
+      final storedName = ref.watch(userNameProvider).valueOrNull ?? '';
+      nameSuffix = storedName.isNotEmpty ? ', $storedName' : '';
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                DateFormat('EEEE, MMMM d').format(DateTime.now()),
-                style: AppTheme.caption,
-              ),
-              const SizedBox(height: 4),
-              Text(_greeting, style: AppTheme.heading),
-            ],
-          ),
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color      : AppTheme.surface,
-              shape      : BoxShape.circle,
-              border     : Border.all(color: AppTheme.surfaceBorder),
-            ),
-            child: Icon(
-              Icons.notifications_outlined,
-              color: AppTheme.textSecondary,
-              size: 20,
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  DateFormat('EEEE, MMMM d').format(DateTime.now()),
+                  style: AppTheme.caption,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${_timeGreeting()}$nameSuffix',
+                  style   : AppTheme.heading,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ],
             ),
           ),
         ],
@@ -182,20 +171,9 @@ class _ProgressRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-
-    // ── BUG 2 FIX ──────────────────────────────────────────────────────────
-    // The old code did `now.subtract(Duration(days: now.weekday - 1))`, which
-    // kept the current time-of-day in weekStart. For example, if it's Monday
-    // 14:32, any work session completed Monday morning (before 14:32) was
-    // excluded from the current week's count — potentially losing several
-    // sessions per day.
-    //
-    // Fix: build weekStart from date-only components so it always points to
-    // midnight at the start of the current week (Monday 00:00:00.000).
-    // ─────────────────────────────────────────────────────────────────────
+    final now       = DateTime.now();
     final weekStart = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: now.weekday - 1)); // ← was: now.subtract(...)
+        .subtract(Duration(days: now.weekday - 1));
 
     final thisWeek = sessions
         .where((s) => s.type == 'work' && s.completedAt.isAfter(weekStart))
@@ -357,8 +335,8 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-      decoration: BoxDecoration(
+      padding    : const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+      decoration : BoxDecoration(
         color        : AppTheme.surface,
         borderRadius : BorderRadius.circular(16),
         border       : Border.all(color: AppTheme.surfaceBorder),
@@ -419,16 +397,13 @@ class _PomodoroTimeline extends StatelessWidget {
                 Row(
                   children: [
                     const SizedBox(width: 40),
-                    ...List.generate(
-                      4,
-                          (i) => Expanded(
-                        child: Text(
-                          bucketLabels[i],
-                          style    : AppTheme.caption.copyWith(fontSize: 9),
-                          textAlign: TextAlign.center,
-                        ),
+                    ...List.generate(4, (i) => Expanded(
+                      child: Text(
+                        bucketLabels[i],
+                        style    : AppTheme.caption.copyWith(fontSize: 9),
+                        textAlign: TextAlign.center,
                       ),
-                    ),
+                    )),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -507,18 +482,15 @@ class _PomodoroTimeline extends StatelessWidget {
                   children: [
                     Text('Less', style: AppTheme.caption.copyWith(fontSize: 9)),
                     const SizedBox(width: 4),
-                    ...List.generate(
-                      5,
-                          (i) => Container(
-                        margin    : const EdgeInsets.only(right: 3),
-                        width     : 12,
-                        height    : 12,
-                        decoration: BoxDecoration(
-                          color        : AppTheme.primary.withAlpha(25 + i * 46),
-                          borderRadius : BorderRadius.circular(2),
-                        ),
+                    ...List.generate(5, (i) => Container(
+                      margin    : const EdgeInsets.only(right: 3),
+                      width     : 12,
+                      height    : 12,
+                      decoration: BoxDecoration(
+                        color        : AppTheme.primary.withAlpha(25 + i * 46),
+                        borderRadius : BorderRadius.circular(2),
                       ),
-                    ),
+                    )),
                     Text('More', style: AppTheme.caption.copyWith(fontSize: 9)),
                   ],
                 ),
@@ -550,7 +522,6 @@ class _FocusBarChart extends StatelessWidget {
           s.completedAt.year  == day.year  &&
           s.completedAt.month == day.month &&
           s.completedAt.day   == day.day)
-      // duration is stored in minutes — do NOT divide by 60 here.
           .fold<int>(0, (sum, s) => sum + s.duration);
       return minutes / 60.0;
     });
@@ -578,8 +549,8 @@ class _FocusBarChart extends StatelessWidget {
                 maxY        : maxY,
                 barTouchData: BarTouchData(enabled: false),
                 titlesData  : FlTitlesData(
-                  show : true,
-                  leftTitles: AxisTitles(
+                  show        : true,
+                  leftTitles  : AxisTitles(
                     sideTitles: SideTitles(
                       showTitles  : true,
                       reservedSize: 32,
@@ -613,10 +584,12 @@ class _FocusBarChart extends StatelessWidget {
                       },
                     ),
                   ),
-                  rightTitles : const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles   : const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  topTitles  : const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
                 ),
-                gridData     : FlGridData(
+                gridData : FlGridData(
                   show             : true,
                   drawVerticalLine : false,
                   horizontalInterval: maxY / 4,
@@ -628,14 +601,14 @@ class _FocusBarChart extends StatelessWidget {
                 borderData: FlBorderData(show: false),
                 barGroups : List.generate(days.length, (i) {
                   return BarChartGroupData(
-                    x    : i,
+                    x      : i,
                     barRods: [
                       BarChartRodData(
-                        toY          : dayHours[i],
-                        color        : AppTheme.primary.withAlpha(
+                        toY         : dayHours[i],
+                        color       : AppTheme.primary.withAlpha(
                             dayHours[i] > 0 ? 200 : 40),
-                        width        : 16,
-                        borderRadius : BorderRadius.circular(4),
+                        width       : 16,
+                        borderRadius: BorderRadius.circular(4),
                       ),
                     ],
                   );
@@ -676,13 +649,11 @@ class _MostProductiveList extends ConsumerWidget {
               border       : Border.all(color: AppTheme.surfaceBorder),
             ),
             child: statsAsync.when(
-              loading: () =>  SizedBox(
+              loading: () => SizedBox(
                 height: 80,
                 child : Center(
                   child: CircularProgressIndicator(
-                    color      : AppTheme.primary,
-                    strokeWidth: 2,
-                  ),
+                      color: AppTheme.primary, strokeWidth: 2),
                 ),
               ),
               error: (e, _) => Text(
@@ -695,11 +666,8 @@ class _MostProductiveList extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     child: Row(
                       children: [
-                        Icon(
-                          Icons.checklist_outlined,
-                          color: AppTheme.textDisabled,
-                          size : 20,
-                        ),
+                        Icon(Icons.checklist_outlined,
+                            color: AppTheme.textDisabled, size: 20),
                         const SizedBox(width: 12),
                         Text(
                           'Complete some tasks to see rankings.',
@@ -749,11 +717,9 @@ class _ListStatRow extends StatelessWidget {
                     Text(
                       stat.list.name,
                       style: AppTheme.body.copyWith(
-                        fontSize  : 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines : 1,
-                      overflow : TextOverflow.ellipsis,
+                          fontSize: 13, fontWeight: FontWeight.w500),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 6),
                     ClipRRect(
@@ -777,9 +743,7 @@ class _ListStatRow extends StatelessWidget {
                   Text(
                     '$pct%',
                     style: AppTheme.body.copyWith(
-                      fontSize  : 13,
-                      fontWeight: FontWeight.w600,
-                    ),
+                        fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                   Text(
                     '${stat.completed}/${stat.total}',
@@ -797,12 +761,16 @@ class _ListStatRow extends StatelessWidget {
 }
 
 // ── Encouragement Card ────────────────────────────────────────
+// Changed from StatelessWidget → ConsumerWidget so it reads the
+// flavor-aware string from AppStrings instead of a hardcoded quote.
 
-class _EncouragementCard extends StatelessWidget {
+class _EncouragementCard extends ConsumerWidget {
   const _EncouragementCard();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = AppStrings.of(ref); // ← reads from AppConfig
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
       child: Container(
@@ -824,7 +792,7 @@ class _EncouragementCard extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                '"Small steps are still progress. You\'re doing just fine."',
+                '"${s.dashboardEncouragement}"', // ← was hardcoded
                 style: AppTheme.body.copyWith(
                   fontStyle: FontStyle.italic,
                   fontSize : 13,
@@ -853,8 +821,10 @@ class _SectionHeader extends StatelessWidget {
       mainAxisAlignment : MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Text(title, style: AppTheme.body.copyWith(fontWeight: FontWeight.w600)),
-        Text(subtitle, style: AppTheme.caption.copyWith(fontSize: 11)),
+        Text(title,
+            style: AppTheme.body.copyWith(fontWeight: FontWeight.w600)),
+        Text(subtitle,
+            style: AppTheme.caption.copyWith(fontSize: 11)),
       ],
     );
   }

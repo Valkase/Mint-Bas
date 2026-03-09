@@ -1,120 +1,118 @@
 // lib/core/flavor/app_strings.dart
 //
-// Single source of truth for all user-visible text.
-// Every screen reads strings from here — never hard-codes them.
+// Bridge layer — every screen calls AppStrings.of(ref) and gets strings back.
+// All actual string values live in app_config.dart — that is the only
+// file you ever need to edit.
 //
-// HOW TO USE IN A WIDGET:
-//   final s = AppStrings.of(ref);          // in ConsumerWidget / ConsumerState
-//   Text(s.pomodoroTitle)
-//
-// HOW TO USE WITHOUT REF (e.g. a plain StatelessWidget that already has flavor):
-//   final s = AppStrings.forFlavor(AppFlavor.basboosa);
+// DO NOT add string values here. Add them in app_config.dart instead.
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../config/app_config.dart';
 import 'app_flavor.dart';
 
 class AppStrings {
   final AppFlavor flavor;
   const AppStrings._(this.flavor);
 
-  // ── Factory ────────────────────────────────────────────────────────────────
-
   static AppStrings of(WidgetRef ref) =>
       AppStrings._(ref.read(flavorProvider));
 
   static AppStrings forFlavor(AppFlavor f) => AppStrings._(f);
 
-  bool get _b => flavor == AppFlavor.basboosa;
+  // ── App identity ──────────────────────────────────────────────────────────
 
-  // ── App identity ───────────────────────────────────────────────────────────
+  String get appName          => AppConfig.appName;
+  String get greetingSuffix   => AppConfig.greetingSuffix;
+  String get projectsSubtitle => AppConfig.projectsSubtitle;
 
-  String get appName => _b ? 'Basboosa' : 'Mint';
+  // ── Easter eggs ───────────────────────────────────────────────────────────
 
-  // ── Onboarding ─────────────────────────────────────────────────────────────
+  bool   get easterEggsEnabled     => AppConfig.easterEggsEnabled;
+  String get easterEggBalanceTitle => AppConfig.easterEggBalanceTitle;
+  String get easterEggBalanceBody  => AppConfig.easterEggBalanceBody;
 
-  // Slide 1
-  String get ob1Title    => _b ? 'صباح الخير يا بسبوسة'    : 'Everything, organised.';
-  String get ob1Subtitle => _b ? 'الابليكشن ده بيجيب م الاخر (على قده يعني مش عاوزين افورة)' :
-  'Tasks, projects and deadlines — all in one place, without the chaos.';
+  // ── Onboarding ────────────────────────────────────────────────────────────
 
-  // Slide 2
-  String get ob2Title    => _b ? 'مفيش زنقات كلاب تاني'    : 'Focus like you mean it.';
-  String get ob2Subtitle => _b ? 'متتعشميش, الحاجات دي اقدار للي زيك و زيي, انا بكتب الرسالة دي 7 مارس (انا راكمت)' :
-  'A built-in Pomodoro timer that keeps you in the zone and tracks every session.';
+  String get ob1Title     => AppConfig.ob1Title;
+  String get ob1Subtitle  => AppConfig.ob1Subtitle;
+  String get ob2Title     => AppConfig.ob2Title;
+  String get ob2Subtitle  => AppConfig.ob2Subtitle;
+  String get ob3Title     => AppConfig.ob3Title;
+  String get ob3Subtitle  => AppConfig.ob3Subtitle;
+  String get obNext       => AppConfig.obNext;
+  String get obSkip       => AppConfig.obSkip;
+  String get obGetStarted => AppConfig.obGetStarted;
 
-  // Slide 3
-  String get ob3Title    => _b ? 'لبسبوسة'    : 'You deserve the reward.';
-  String get ob3Subtitle => _b ? 'معرفش جات على بالي ليه, بس ادعي لألاء بالرحمة' :
-  'Earn coins for every session you complete. Spend them on rewards you actually want.';
+  // ── Tasks screen ──────────────────────────────────────────────────────────
 
-  // Buttons
-  String get obNext      => _b ? 'الي بعدواا'         : 'Next';
-  String get obSkip      => _b ? 'ارجع ورا'           : 'Skip';
-  String get obGetStarted => _b ? 'ليتس جو'      : 'Get started';
+  String get tasksScreenTitle     => AppConfig.tasksScreenTitle;
+  String get tasksEmptyTitle      => AppConfig.tasksEmptyTitle;
+  String get tasksEmptyBody       => AppConfig.tasksEmptyBody;
+  String get tasksAddButton       => AppConfig.tasksAddButton;
+  String get tasksToday           => AppConfig.tasksToday;
+  String get tasksUpcoming        => AppConfig.tasksUpcoming;
+  String get tasksOverdue         => AppConfig.tasksOverdue;
+  String get tasksDone            => AppConfig.tasksDone;
+  String get emptyTasksMessage    => AppConfig.emptyTasksMessage;
+  String get emptyProjectsMessage => AppConfig.emptyProjectsMessage;
 
-  // ── Tasks screen ───────────────────────────────────────────────────────────
+  // ── Pomodoro screen ───────────────────────────────────────────────────────
 
-  String get tasksScreenTitle  => _b ? 'الي مراكماه'       : 'My Tasks';
-  String get tasksEmptyTitle   => _b ? 'روحي نامي خلاص' : 'Nothing here yet';
-  String get tasksEmptyBody    => _b ? 'المذاكرة مش بتخلص (اي ام مصرية)'  : 'Add your first task and get going.';
-  String get tasksAddButton    => _b ? 'راكمي التاسك'    : 'Add task';
-  String get tasksToday        => _b ? 'انهاردة'       : 'Today';
-  String get tasksUpcoming     => _b ? 'حاجات هراكمها'    : 'Upcoming';
-  String get tasksOverdue      => _b ? 'ما انا لو مزة كنت اتعملت'     : 'Overdue';
-  String get tasksDone         => _b ? 'فنشن الدنيا'        : 'Done';
+  String get pomodoroScreenTitle    => AppConfig.pomodoroScreenTitle;
+  String get pomodoroPhaseWork      => AppConfig.pomodoroPhaseWork;
+  String get pomodoroPhaseShort     => AppConfig.pomodoroPhaseShort;
+  String get phaseLong              => AppConfig.phaseLong;
+  String get pomodoroMinRemaining   => AppConfig.pomodoroMinRemaining;
+  String get pomodoroSessionOf      => AppConfig.pomodoroSessionOf;
+  String get pomodoroNoTask         => AppConfig.pomodoroNoTask;
+  String get pomodoroFreeSession    => AppConfig.pomodoroFreeSession;
+  String get pomodoroCurrentTask    => AppConfig.pomodoroCurrentTask;
+  String get pomodoroTaskOptions    => AppConfig.pomodoroTaskOptions;
+  String get pomodoroDetachHint     => AppConfig.pomodoroDetachHint;
+  String get pomodoroDetachBtn      => AppConfig.pomodoroDetachBtn;
+  String get pomodoroSessionDone    => AppConfig.pomodoroSessionDone;
+  String get pomodoroSessionDoneSub => AppConfig.pomodoroSessionDoneSub;
+  String get pomodoroBreakOver      => AppConfig.pomodoroBreakOver;
+  String get pomodoroBreakOverSub   => AppConfig.pomodoroBreakOverSub;
+  String get pomodoroStartingBreak  => AppConfig.pomodoroStartingBreak;
+  String get pomodoroStartingFocus  => AppConfig.pomodoroStartingFocus;
 
-  // ── Pomodoro screen ────────────────────────────────────────────────────────
-
-  String get pomodoroScreenTitle  => _b ? 'وقت التركيز'              : 'Focus Session';
-  String get pomodoroPhaseWork    => _b ? 'ركزي'                     : 'Focus';
-  String get pomodoroPhaseShort   => _b ? 'استريحي شوية'             : 'Short Break';
-  String get phaseLong            => _b ? 'استريحي كتير'             : 'Long Break';
-  String get pomodoroMinRemaining => _b ? 'دقيقة فاضلة'              : 'minutes remaining';
-  String get pomodoroSessionOf    => _b ? 'جلسة {n} من 4'            : 'Session {n} of 4';
-  String get pomodoroNoTask       => _b ? 'مفيش مهمة'                : 'No task attached';
-  String get pomodoroFreeSession  => _b ? 'جلسة حرة يا بسبوسة'      : 'Free focus session';
-  String get pomodoroCurrentTask  => _b ? 'شغالة على'                : 'Current Task';
-  String get pomodoroTaskOptions  => _b ? 'الحاجات المتراكمة'            : 'Task Options';
-  String get pomodoroDetachHint   => _b
-      ? 'عشان تشتغلي على مهمة تانية، ارجعي و دوسي على زرار التركيز.'
-      : 'To focus on a different task, go back and tap the focus button on any task card.';
-  String get pomodoroDetachBtn    => _b ? 'شيلي المهمة'              : 'Detach from task';
-
-  // Completion overlay
-  String get pomodoroSessionDone  => _b ? 'خلصتي!'               : 'Session complete.';
-  String get pomodoroSessionDoneSub => _b ? 'العب بالنار و متلعبش مع بسبوسة'     : 'Take a breath. You earned it.';
-  String get pomodoroBreakOver    => _b ? 'خلص الاستراحة'            : 'Break over.';
-  String get pomodoroBreakOverSub => _b ? 'يلا تاني يا بسبوسة!'     : "Back to it. Let's go.";
-  String get pomodoroStartingBreak => _b ? 'الاستراحة بدأت...'       : 'Starting break...';
-  String get pomodoroStartingFocus => _b ? 'يلا CH3COOHيكي معانا هنا'             : 'Starting focus...';
-
-  // Session count helper — replace {n} with actual number
+  // Session count helper — replaces {n} with the actual number
   String sessionOf(int n) =>
-      pomodoroSessionOf.replaceAll('{n}', n.toString());
+      AppConfig.pomodoroSessionOf.replaceAll('{n}', n.toString());
 
-  // ── Rewards screen ─────────────────────────────────────────────────────────
+  // ── Rewards screen ────────────────────────────────────────────────────────
 
-  String get rewardsScreenTitle  => _b ? 'حلوياتي'       : 'My Rewards';
-  String get rewardsEmptyTitle   => _b ? 'الدكان فاضي' : 'No rewards yet';
-  String get rewardsEmptyBody    => _b ? 'حطي اي حاجة تدي تحفيز'  : 'Add something worth working towards.';
-  String get rewardsAddButton    => _b ? 'عبي الدكان'    : 'Add reward';
-  String get rewardsRedeem       => _b ? 'توتو على كبوتو'        : 'Redeem';
-  String get rewardsCost         => _b ? 'كويناتي'          : 'coins';
+  String get rewardsScreenTitle => AppConfig.rewardsScreenTitle;
+  String get rewardsSubtitle    => AppConfig.rewardsSubtitle;
+  String get rewardsEmptyTitle  => AppConfig.rewardsEmptyTitle;
+  String get rewardsEmptyBody   => AppConfig.rewardsEmptyBody;
+  String get rewardsAddButton   => AppConfig.rewardsAddButton;
+  String get rewardsRedeem      => AppConfig.rewardsRedeem;
+  String get rewardsCost        => AppConfig.rewardsCost;
 
-  // ── Banking screen ─────────────────────────────────────────────────────────
+  // ── Banking screen ────────────────────────────────────────────────────────
 
-  String get bankingScreenTitle  => _b ? 'نقودي يا عالم'       : 'My Balance';
-  String get bankingBalance       => _b ? 'الفلوس كلها'      : 'Total coins';
-  String get bankingEarned       => _b ? 'عرق جبيني'        : 'Earned';
-  String get bankingSpent        => _b ? 'الي اتبعزق'         : 'Spent';
-  String get bankingHistory      => _b ? 'تاريخ البعزقة'       : 'History';
-  String get bankingEmpty        => _b ? 'مفيش صفاقات'       : 'No transactions yet.';
+  String get bankingScreenTitle     => AppConfig.bankingScreenTitle;
+  String get bankingBalance         => AppConfig.bankingBalance;
+  String get bankingEarned          => AppConfig.bankingEarned;
+  String get bankingSpent           => AppConfig.bankingSpent;
+  String get bankingHistory         => AppConfig.bankingHistory;
+  String get bankingEmpty           => AppConfig.bankingEmpty;
+  String get bankingTaskCompleted   => AppConfig.bankingTaskCompleted;
+  String get bankingRewardPurchased => AppConfig.bankingRewardPurchased;
+  String get bankingNoCoinsEarned   => AppConfig.bankingNoCoinsEarned;
+  String get bankingNothingSpent    => AppConfig.bankingNothingSpent;
 
-  // ── Shared / generic ───────────────────────────────────────────────────────
+  // ── Dashboard ─────────────────────────────────────────────────────────────
 
-  String get cancel  => _b ? 'إلغاء'  : 'Cancel';
-  String get save    => _b ? 'حفظ'    : 'Save';
-  String get delete  => _b ? 'مسح'    : 'Delete';
-  String get confirm => _b ? 'تأكيد'  : 'Confirm';
-  String get done    => _b ? 'تمام'   : 'Done';
+  String get dashboardEncouragement => AppConfig.dashboardEncouragement;
+
+  // ── Generic / shared ──────────────────────────────────────────────────────
+
+  String get cancel  => AppConfig.cancel;
+  String get save    => AppConfig.save;
+  String get delete  => AppConfig.delete;
+  String get confirm => AppConfig.confirm;
+  String get done    => AppConfig.done;
 }

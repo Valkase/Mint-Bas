@@ -1,3 +1,5 @@
+// lib/features/banking/screens/banking_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,9 +26,9 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(themeProvider); // rebuild instantly on theme change
-    final s = AppStrings.of(ref);
-    final balanceAsync = ref.watch(balanceStreamProvider);
+    ref.watch(themeProvider);
+    final s                 = AppStrings.of(ref);
+    final balanceAsync      = ref.watch(balanceStreamProvider);
     final transactionsAsync = ref.watch(transactionsStreamProvider);
 
     return Scaffold(
@@ -34,6 +36,7 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
+
             // ── Header ──────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
@@ -48,17 +51,17 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
                         showSettingsSheet(context);
                       },
                       child: Container(
-                        width: 40,
+                        width : 40,
                         height: 40,
                         decoration: BoxDecoration(
-                          color: AppTheme.surface,
-                          shape: BoxShape.circle,
+                          color : AppTheme.surface,
+                          shape : BoxShape.circle,
                           border: Border.all(color: AppTheme.surfaceBorder),
                         ),
                         child: Icon(
                           Icons.tune_rounded,
                           color: AppTheme.textSecondary,
-                          size: 20,
+                          size : 20,
                         ),
                       ),
                     ),
@@ -73,37 +76,24 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
                 child: balanceAsync.when(
                   loading: () => const _BalanceCardSkeleton(),
-                  error: (_, __) => const SizedBox.shrink(),
-                  data: (balance) {
-                    return transactionsAsync.when(
-                      loading: () => _BalanceCard(
-                        balance: balance,
-                        totalEarned: 0,
-                        totalSpent: 0,
-                        s: s,
-                      ),
-                      error: (_, __) => _BalanceCard(
-                        balance: balance,
-                        totalEarned: 0,
-                        totalSpent: 0,
-                        s: s,
-                      ),
-                      data: (transactions) {
-                        final earned = transactions
-                            .where((t) => t.type == 'earn')
-                            .fold<double>(0, (sum, t) => sum + t.amount);
-                        final spent = transactions
-                            .where((t) => t.type == 'spend')
-                            .fold<double>(0, (sum, t) => sum + t.amount);
-                        return _BalanceCard(
-                          balance: balance,
-                          totalEarned: earned,
-                          totalSpent: spent,
-                          s: s,
-                        );
-                      },
-                    );
-                  },
+                  error  : (_, __) => const SizedBox.shrink(),
+                  data   : (balance) => transactionsAsync.when(
+                    loading: () => _BalanceCard(
+                        balance: balance, totalEarned: 0, totalSpent: 0, s: s),
+                    error  : (_, __) => _BalanceCard(
+                        balance: balance, totalEarned: 0, totalSpent: 0, s: s),
+                    data   : (transactions) {
+                      final earned = transactions
+                          .where((t) => t.type == 'earn')
+                          .fold<double>(0, (sum, t) => sum + t.amount);
+                      final spent = transactions
+                          .where((t) => t.type == 'spend')
+                          .fold<double>(0, (sum, t) => sum + t.amount);
+                      return _BalanceCard(
+                          balance: balance, totalEarned: earned,
+                          totalSpent: spent, s: s);
+                    },
+                  ),
                 ),
               ),
             ),
@@ -115,24 +105,21 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
                 child: Row(
                   children: [
                     _FilterChip(
-                      label: 'All',
+                      label   : 'All',
                       selected: _filter == _TransactionFilter.all,
-                      onTap: () =>
-                          setState(() => _filter = _TransactionFilter.all),
+                      onTap   : () => setState(() => _filter = _TransactionFilter.all),
                     ),
                     const SizedBox(width: 10),
                     _FilterChip(
-                      label: 'Earned',
+                      label   : 'Earned',
                       selected: _filter == _TransactionFilter.earned,
-                      onTap: () =>
-                          setState(() => _filter = _TransactionFilter.earned),
+                      onTap   : () => setState(() => _filter = _TransactionFilter.earned),
                     ),
                     const SizedBox(width: 10),
                     _FilterChip(
-                      label: 'Spent',
+                      label   : 'Spent',
                       selected: _filter == _TransactionFilter.spent,
-                      onTap: () =>
-                          setState(() => _filter = _TransactionFilter.spent),
+                      onTap   : () => setState(() => _filter = _TransactionFilter.spent),
                     ),
                   ],
                 ),
@@ -141,14 +128,11 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
 
             // ── Transaction List ─────────────────────────────
             transactionsAsync.when(
-              loading: () =>  SliverToBoxAdapter(
+              loading: () => const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.only(top: 40),
                   child: Center(
-                    child: CircularProgressIndicator(
-                      color: AppTheme.primary,
-                      strokeWidth: 2,
-                    ),
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
               ),
@@ -162,17 +146,11 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
                 ),
               ),
               data: (transactions) {
-                // Apply filter
                 final filtered = transactions.where((t) {
-                  if (_filter == _TransactionFilter.earned) {
-                    return t.type == 'earn';
-                  }
-                  if (_filter == _TransactionFilter.spent) {
-                    return t.type == 'spend';
-                  }
+                  if (_filter == _TransactionFilter.earned) return t.type == 'earn';
+                  if (_filter == _TransactionFilter.spent)  return t.type == 'spend';
                   return true;
                 }).toList()
-                // Sort newest first
                   ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
                 if (filtered.isEmpty) {
@@ -181,8 +159,7 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
                   );
                 }
 
-                // Group by date
-                final grouped = _groupByDate(filtered);
+                final grouped  = _groupByDate(filtered);
                 final dateKeys = grouped.keys.toList();
 
                 return SliverPadding(
@@ -190,32 +167,26 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                           (context, index) {
-                        final date = dateKeys[index];
+                        final date  = dateKeys[index];
                         final items = grouped[date]!;
-
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Date header
                             Padding(
-                              padding:
-                              const EdgeInsets.only(top: 16, bottom: 8),
+                              padding: const EdgeInsets.only(top: 16, bottom: 8),
                               child: Text(
                                 _formatDateHeader(date),
                                 style: AppTheme.caption.copyWith(
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight  : FontWeight.w600,
                                   letterSpacing: 0.8,
-                                  fontSize: 11,
+                                  fontSize    : 11,
                                 ),
                               ),
                             ),
-                            // Transaction rows
-                            ...items.map(
-                                  (t) => Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: _TransactionRow(transaction: t),
-                              ),
-                            ),
+                            ...items.map((t) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _TransactionRow(transaction: t),
+                            )),
                           ],
                         );
                       },
@@ -231,27 +202,20 @@ class _BankingScreenState extends ConsumerState<BankingScreen> {
     );
   }
 
-  // Groups transactions by calendar date (year-month-day)
-  Map<DateTime, List<Transaction>> _groupByDate(
-      List<Transaction> transactions) {
+  Map<DateTime, List<Transaction>> _groupByDate(List<Transaction> transactions) {
     final map = <DateTime, List<Transaction>>{};
     for (final t in transactions) {
-      final date = DateTime(
-        t.createdAt.year,
-        t.createdAt.month,
-        t.createdAt.day,
-      );
+      final date = DateTime(t.createdAt.year, t.createdAt.month, t.createdAt.day);
       map.putIfAbsent(date, () => []).add(t);
     }
     return map;
   }
 
   String _formatDateHeader(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final now       = DateTime.now();
+    final today     = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(const Duration(days: 1));
-
-    if (date == today) return 'TODAY';
+    if (date == today)     return 'TODAY';
     if (date == yesterday) return 'YESTERDAY';
     return DateFormat('MMMM d').format(date).toUpperCase();
   }
@@ -277,88 +241,68 @@ class _BalanceCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.surfaceBorder),
+        color        : AppTheme.surface,
+        borderRadius : BorderRadius.circular(20),
+        border       : Border.all(color: AppTheme.surfaceBorder),
       ),
       child: Column(
         children: [
-          // Icon + balance
           Container(
-            width: 48,
+            width : 48,
             height: 48,
             decoration: BoxDecoration(
               color: AppTheme.coral.withAlpha(38),
               shape: BoxShape.circle,
             ),
-            child:  Icon(
-              Icons.monetization_on_outlined,
-              color: AppTheme.coral,
-              size: 26,
-            ),
+            child: Icon(Icons.monetization_on_outlined,
+                color: AppTheme.coral, size: 26),
           ),
           const SizedBox(height: 12),
           TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: balance),
+            tween   : Tween(begin: 0, end: balance),
             duration: const Duration(milliseconds: 900),
-            curve: Curves.easeOut,
-            builder: (context, value, _) => Text(
+            curve   : Curves.easeOut,
+            builder : (context, value, _) => Text(
               value.toStringAsFixed(0),
-              style: AppTheme.display.copyWith(
-                fontSize: 40,
-                letterSpacing: -1,
-              ),
+              style: AppTheme.display.copyWith(fontSize: 40, letterSpacing: -1),
             ),
           ),
           const SizedBox(height: 4),
           Text(s.bankingBalance, style: AppTheme.caption),
-
           const SizedBox(height: 16),
           Divider(color: AppTheme.surfaceBorder, height: 1),
           const SizedBox(height: 16),
-
-          // Earned / Spent row
           Row(
             children: [
               Expanded(
                 child: Column(
                   children: [
-                    Text(
-                      s.bankingEarned,
-                      style: AppTheme.caption.copyWith(fontSize: 11),
-                    ),
+                    Text(s.bankingEarned,
+                        style: AppTheme.caption.copyWith(fontSize: 11)),
                     const SizedBox(height: 4),
                     Text(
                       '+${totalEarned.toStringAsFixed(0)}',
                       style: AppTheme.body.copyWith(
-                        color: AppTheme.success,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
+                          color: AppTheme.success,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15),
                     ),
                   ],
                 ),
               ),
-              Container(
-                width: 1,
-                height: 32,
-                color: AppTheme.surfaceBorder,
-              ),
+              Container(width: 1, height: 32, color: AppTheme.surfaceBorder),
               Expanded(
                 child: Column(
                   children: [
-                    Text(
-                      s.bankingSpent,
-                      style: AppTheme.caption.copyWith(fontSize: 11),
-                    ),
+                    Text(s.bankingSpent,
+                        style: AppTheme.caption.copyWith(fontSize: 11)),
                     const SizedBox(height: 4),
                     Text(
                       '-${totalSpent.toStringAsFixed(0)}',
                       style: AppTheme.body.copyWith(
-                        color: AppTheme.coral,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
+                          color: AppTheme.coral,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15),
                     ),
                   ],
                 ),
@@ -377,17 +321,15 @@ class _BalanceCardSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 200,
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.surfaceBorder),
+      height     : 200,
+      decoration : BoxDecoration(
+        color        : AppTheme.surface,
+        borderRadius : BorderRadius.circular(20),
+        border       : Border.all(color: AppTheme.surfaceBorder),
       ),
-      child:  Center(
+      child: Center(
         child: CircularProgressIndicator(
-          color: AppTheme.primary,
-          strokeWidth: 2,
-        ),
+            color: AppTheme.primary, strokeWidth: 2),
       ),
     );
   }
@@ -412,19 +354,18 @@ class _FilterChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding:
-        const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+        padding : const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
         decoration: BoxDecoration(
-          color: selected ? AppTheme.primary : AppTheme.elevated,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
+          color        : selected ? AppTheme.primary : AppTheme.elevated,
+          borderRadius : BorderRadius.circular(20),
+          border       : Border.all(
             color: selected ? AppTheme.primary : AppTheme.surfaceBorder,
           ),
         ),
         child: Text(
           label,
           style: AppTheme.label.copyWith(
-            color: selected ? Colors.white : AppTheme.textSecondary,
+            color   : selected ? Colors.white : AppTheme.textSecondary,
             fontSize: 13,
           ),
         ),
@@ -434,43 +375,41 @@ class _FilterChip extends StatelessWidget {
 }
 
 // ── Transaction Row ───────────────────────────────────────────
+// Now a ConsumerWidget so it can read AppStrings.of(ref) directly —
+// no more hardcoded 'Task completed' / 'Reward purchased'.
 
-class _TransactionRow extends StatelessWidget {
+class _TransactionRow extends ConsumerWidget {
   final Transaction transaction;
-
   const _TransactionRow({required this.transaction});
 
-  bool get _isEarn => transaction.type == 'earn';
+  bool     get _isEarn        => transaction.type == 'earn';
+  Color    get _color         => _isEarn ? AppTheme.success : AppTheme.coral;
+  IconData get _icon          => _isEarn ? Icons.arrow_upward : Icons.arrow_downward;
+  String   get _formattedTime => DateFormat('h:mm a').format(transaction.createdAt);
 
-  Color get _color => _isEarn ? AppTheme.success : AppTheme.coral;
-
-  IconData get _icon =>
-      _isEarn ? Icons.arrow_upward : Icons.arrow_downward;
-
-  String get _formattedTime =>
-      DateFormat('h:mm a').format(transaction.createdAt);
-
-  String get _label {
+  String _label(AppStrings s) {
     if (transaction.note != null && transaction.note!.isNotEmpty) {
       return transaction.note!;
     }
-    return _isEarn ? 'Task completed' : 'Reward purchased';
+    // Uses AppConfig values — no hardcoded strings
+    return _isEarn ? s.bankingTaskCompleted : s.bankingRewardPurchased;
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = AppStrings.of(ref); // ← reads flavor from provider, not hardcoded
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding   : const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.surfaceBorder),
+        color        : AppTheme.surface,
+        borderRadius : BorderRadius.circular(14),
+        border       : Border.all(color: AppTheme.surfaceBorder),
       ),
       child: Row(
         children: [
-          // Icon bubble
           Container(
-            width: 40,
+            width : 40,
             height: 40,
             decoration: BoxDecoration(
               color: _color.withAlpha(25),
@@ -479,35 +418,26 @@ class _TransactionRow extends StatelessWidget {
             child: Icon(_icon, color: _color, size: 18),
           ),
           const SizedBox(width: 14),
-
-          // Label + time
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _label,
-                  style: AppTheme.body.copyWith(fontSize: 15),
+                  _label(s), // ← now goes through AppStrings
+                  style   : AppTheme.body.copyWith(fontSize: 15),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  _formattedTime,
-                  style: AppTheme.caption.copyWith(fontSize: 11),
-                ),
+                Text(_formattedTime,
+                    style: AppTheme.caption.copyWith(fontSize: 11)),
               ],
             ),
           ),
-
-          // Amount
           Text(
             '${_isEarn ? '+' : '-'}${transaction.amount.toStringAsFixed(0)}',
             style: AppTheme.body.copyWith(
-              color: _color,
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-            ),
+                color: _color, fontWeight: FontWeight.w600, fontSize: 15),
           ),
         ],
       ),
@@ -524,11 +454,9 @@ class _EmptyState extends StatelessWidget {
 
   String _message(AppStrings s) {
     return switch (filter) {
-      _TransactionFilter.earned =>
-      'No coins earned yet.\nComplete tasks to start earning.',
-      _TransactionFilter.spent =>
-      'Nothing spent yet.\nVisit the Rewards tab to redeem coins.',
-      _ => s.bankingEmpty,
+      _TransactionFilter.earned => s.bankingNoCoinsEarned,   // ← was hardcoded
+      _TransactionFilter.spent  => s.bankingNothingSpent,    // ← was hardcoded
+      _TransactionFilter.all    => s.bankingEmpty,
     };
   }
 
@@ -539,22 +467,19 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 64,
+            width : 64,
             height: 64,
             decoration: BoxDecoration(
               color: AppTheme.coral.withAlpha(25),
               shape: BoxShape.circle,
             ),
-            child:  Icon(
-              Icons.monetization_on_outlined,
-              color: AppTheme.coral,
-              size: 28,
-            ),
+            child: Icon(Icons.monetization_on_outlined,
+                color: AppTheme.coral, size: 28),
           ),
           const SizedBox(height: 20),
           Text(
             _message(s),
-            style: AppTheme.caption.copyWith(height: 1.7),
+            style    : AppTheme.caption.copyWith(height: 1.7),
             textAlign: TextAlign.center,
           ),
         ],

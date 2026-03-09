@@ -140,25 +140,19 @@ class DeviceFlavorService {
   Future<AppFlavor?> _queryByIp(String ip) async {
     final db = FirebaseFirestore.instance;
 
-    // Only match unclaimed visits so the same website visit
-    // cannot accidentally match a second device.
     final snap = await db
         .collection('web_visits')
         .where('ip', isEqualTo: ip)
         .where('claimed', isEqualTo: false)
-        .orderBy('timestamp', descending: true)
         .limit(1)
-        .get();
+        .get();                          // ← orderBy('timestamp') removed
 
     if (snap.docs.isNotEmpty) {
       debugPrint('[DeviceFlavorService] → Basboosa via IP match 🎉');
-
-      // Mark as claimed so no other device can use this visit.
       await snap.docs.first.reference.update({
         'claimed'    : true,
         'claimed_at' : FieldValue.serverTimestamp(),
       });
-
       return AppFlavor.basboosa;
     }
     return null;

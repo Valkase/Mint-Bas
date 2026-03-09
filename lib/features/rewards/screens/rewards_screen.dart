@@ -46,9 +46,8 @@ class RewardsScreen extends ConsumerWidget {
                           Text(s.rewardsScreenTitle, style: AppTheme.heading),
                           const SizedBox(height: 4),
                           Text(
-                            'Celebrate your progress with small joys.',
-                            style: AppTheme.caption,
-                          ),
+                            s.rewardsSubtitle,
+                            style: AppTheme.caption),
                         ],
                       ),
                     ),

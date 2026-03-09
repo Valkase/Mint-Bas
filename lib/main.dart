@@ -12,6 +12,7 @@ import 'core/theme/app_theme.dart';
 import 'data/database/app_database.dart';
 import 'data/database/database_seeder.dart';
 import 'features/pomodoro/services/notification_service.dart';
+import 'features/unlock/screens/unlock_screen.dart';
 import 'firebase_options.dart';
 import 'shared/providers/repository_providers.dart';
 
@@ -23,14 +24,22 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // ── Flavor detection ───────────────────────────────────────────────────────
-  final flavor         = await DeviceFlavorService.instance.detectFlavor();
-  final onboardingDone = await DeviceFlavorService.instance.isOnboardingComplete();
+  // ── Unlock check (Basboosa only) ───────────────────────────────────────────
+  // For Mint the gate is skipped entirely — appUnlocked stays true so the
+  // router never redirects to /unlock.
+  if (AppConfig.flavor == AppFlavor.basboosa) {
+    appUnlocked = await isAppUnlocked();
+  } else {
+    appUnlocked = true;
+  }
 
+  // ── Onboarding state ───────────────────────────────────────────────────────
+  final onboardingDone = await DeviceFlavorService.instance.isOnboardingComplete();
   appOnboardingComplete = onboardingDone;
 
-  // ── Theme configuration ────────────────────────────────────────────────────
-  AppTheme.configure(flavor);
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  // Flavor is now compile-time, so we read it directly from AppConfig.
+  AppTheme.configure(AppConfig.flavor);
 
   // ── Notifications ──────────────────────────────────────────────────────────
   await NotificationService.instance.init();
@@ -42,7 +51,8 @@ void main() async {
   runApp(
     ProviderScope(
       overrides: [
-        flavorProvider.overrideWithValue(flavor),
+        // Flavor is compile-time — no runtime detection needed anymore
+        flavorProvider.overrideWithValue(AppConfig.flavor),
         databaseProvider.overrideWithValue(db),
       ],
       child: const MyApp(),
@@ -58,11 +68,11 @@ class MyApp extends ConsumerWidget {
     final themeState = ref.watch(themeProvider);
 
     return MaterialApp.router(
-      title:                      AppConfig.appName,
-      theme:                      AppTheme.light,
-      darkTheme:                  AppTheme.dark,
-      themeMode:                  themeState.mode,
-      routerConfig:               appRouter,
+      title                    : AppConfig.appName,
+      theme                    : AppTheme.light,
+      darkTheme                : AppTheme.dark,
+      themeMode                : themeState.mode,
+      routerConfig             : appRouter,
       debugShowCheckedModeBanner: false,
     );
   }

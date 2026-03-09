@@ -1,4 +1,9 @@
 // lib/features/onboarding/screens/onboarding_screen.dart
+//
+// Changes vs original:
+//   • _finish() now branches on flavor:
+//       Mint     → context.go('/name-entry')  (ask for the user's name)
+//       Basboosa → context.go('/')            (name is already known)
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,9 +36,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   Future<void> _finish() async {
     await DeviceFlavorService.instance.markOnboardingComplete();
-    // FIX: update the in-memory flag so the router redirect lets us through
     appOnboardingComplete = true;
-    if (mounted) context.go('/');
+
+    if (!mounted) return;
+
+    final flavor = ref.read(flavorProvider);
+    if (flavor == AppFlavor.mint) {
+      // Mint users are asked for their name before entering the app.
+      context.go('/name-entry');
+    } else {
+      // Basboosa already has a name — go straight home.
+      context.go('/');
+    }
   }
 
   void _next() {
@@ -108,9 +122,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
             // ── Slides ────────────────────────────────────────────────
             Expanded(
               child: PageView.builder(
-                controller:      _controller,
-                itemCount:       slides.length,
-                onPageChanged:   (i) => setState(() => _page = i),
+                controller:    _controller,
+                itemCount:     slides.length,
+                onPageChanged: (i) => setState(() => _page = i),
                 itemBuilder: (_, i) => _Slide(
                   data:    slides[i],
                   primary: primary,
