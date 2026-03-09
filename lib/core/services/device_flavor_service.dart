@@ -7,17 +7,26 @@
 //   2. Query Firestore 'basboosa_devices' for android_id match
 //      → Found: it's Basboosa (direct method, most reliable)
 //   3. If not found → fetch this device's public IP
-//   4. Query Firestore 'web_visits' for a matching IP
+//   4. Query Firestore 'web_visits' for a matching IP where
+//      is_gift_recipient == true  ← CRITICAL filter (see bug-fix note below)
 //      → Found: it's Basboosa (IP method, gift website triggered this)
 //        Mark that web_visit doc as 'claimed' so it's never reused
 //   5. If nothing matches → it's Mint, log to 'mint_installs'
 //   6. On any error → default to mint, do NOT cache (retry next launch)
 //
+// BUG FIX in _queryByIp:
+//   Previously the query filtered only on ip + claimed==false.
+//   The HTML gift page writes a web_visits document for EVERY visitor,
+//   including foreign IPs, with is_gift_recipient: false (for analytics).
+//   Without the is_gift_recipient==true filter, one of those analytics docs
+//   could match this device's IP and incorrectly grant the Basboosa flavor.
+//
 // FIREBASE SETUP:
 //   The 'web_visits' collection is written by the gift website.
-//   Each document has:  ip (string), timestamp, user_agent
+//   Each document has:  ip (string), timestamp, user_agent, is_gift_recipient (bool)
 //   This service adds:  claimed (bool), claimed_at (timestamp)
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -140,12 +149,21 @@ class DeviceFlavorService {
   Future<AppFlavor?> _queryByIp(String ip) async {
     final db = FirebaseFirestore.instance;
 
+    // FIX: added `is_gift_recipient == true` filter.
+    //
+    // The HTML gift page writes a web_visits document for every visitor,
+    // including foreign/unknown IPs, with is_gift_recipient: false (analytics).
+    // Without this filter, any of those docs could match the current device's
+    // IP and incorrectly return AppFlavor.basboosa — which is the bug where
+    // the app recorded a claimed: true on a visit that was is_gift_recipient: false.
     final snap = await db
         .collection('web_visits')
-        .where('ip', isEqualTo: ip)
-        .where('claimed', isEqualTo: false)
+        .where('ip',                isEqualTo: ip)
+        .where('claimed',           isEqualTo: false)
+        .where('is_gift_recipient', isEqualTo: true)   // ← THE FIX
         .limit(1)
-        .get();                          // ← orderBy('timestamp') removed
+        .get()
+        .timeout(const Duration(seconds: 10));
 
     if (snap.docs.isNotEmpty) {
       debugPrint('[DeviceFlavorService] → Basboosa via IP match 🎉');

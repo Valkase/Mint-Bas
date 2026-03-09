@@ -5,16 +5,23 @@
 // FLOW:
 //   1. Fetches the device's public IP (api.ipify.org)
 //   2. Queries Firestore 'web_visits' for a matching unclaimed document
-//      (same collection the gift HTML page writes to when she visits)
+//      where is_gift_recipient == true  ← CRITICAL: prevents foreign-IP
+//      docs (written by the site for analytics) from being claimed here.
 //   3. Match found  → marks it claimed, saves unlocked=true to
 //                     SharedPreferences, navigates forward. Never shown again.
 //   4. No match     → shows a plain "not for you" wall. No way past it.
-//   5. Network error → shows a retry button (could be airplane mode etc.)
+//   5. Network/timeout error → shows a retry button.
 //
-// NOTE: The orderBy is intentionally omitted from the Firestore query to
-// avoid requiring a composite index (orderBy+where = index required, which
-// causes silent failures). There is only ever one doc per IP anyway.
+// BUG FIXES (vs previous version):
+//   • Added `.where('is_gift_recipient', isEqualTo: true)` to the Firestore
+//     query — without this, any web_visits doc (including analytics docs
+//     written for foreign IPs) could be matched and incorrectly claimed.
+//   • Added `.timeout(const Duration(seconds: 10))` to the Firestore call —
+//     without this the app freezes indefinitely on slow / cold-start networks.
+//   • Added `if (!mounted) return;` guards after every await so no setState
+//     is called on a disposed widget.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -59,24 +66,41 @@ class _UnlockScreenState extends State<UnlockScreen> {
   // ── Core logic ────────────────────────────────────────────────────────────
 
   Future<void> _check() async {
+    if (!mounted) return;
     setState(() => _state = _UnlockState.checking);
 
     try {
       // 1 — Get public IP
       final ip = await _getPublicIp();
+      if (!mounted) return;
+
       if (ip == null) {
         setState(() => _state = _UnlockState.error);
         return;
       }
 
-      // 2 — Query Firestore (no orderBy — avoids composite index requirement)
+      // 2 — Query Firestore.
+      //
+      // FIX 1: filter by is_gift_recipient == true.
+      //   The HTML gift page writes a web_visits document for EVERY visitor,
+      //   including foreign IPs, with is_gift_recipient: false.  Without this
+      //   filter any of those docs could match a future app install on the
+      //   same IP and wrongly grant access — which is exactly the bug we saw.
+      //
+      // FIX 2: .timeout(10s) on the Firestore call.
+      //   Without a timeout the app freezes on the loading screen when the
+      //   network is slow or the Firestore socket hasn't warmed up yet.
       final db   = FirebaseFirestore.instance;
       final snap = await db
           .collection('web_visits')
-          .where('ip',      isEqualTo: ip)
-          .where('claimed', isEqualTo: false)
+          .where('ip',               isEqualTo: ip)
+          .where('claimed',          isEqualTo: false)
+          .where('is_gift_recipient', isEqualTo: true)   // ← FIX 1
           .limit(1)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 10));          // ← FIX 2
+
+      if (!mounted) return;                               // ← FIX 3
 
       if (snap.docs.isNotEmpty) {
         // 3 — Match: mark claimed so no other device can reuse this visit
@@ -85,11 +109,15 @@ class _UnlockScreenState extends State<UnlockScreen> {
           'claimed_at' : FieldValue.serverTimestamp(),
         });
 
+        if (!mounted) return;                             // ← FIX 3
+
         // 4 — Persist so this check never runs again
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(_kUnlocked, true);
+        appUnlocked = true;
 
-        if (!mounted) return;
+        if (!mounted) return;                             // ← FIX 3
+
         // Go to onboarding if not done, otherwise straight to app
         if (!appOnboardingComplete) {
           context.go('/onboarding');
@@ -97,12 +125,17 @@ class _UnlockScreenState extends State<UnlockScreen> {
           context.go('/');
         }
       } else {
-        // No matching IP — not authorised
+        // No matching IP with is_gift_recipient=true — not authorised
         setState(() => _state = _UnlockState.notAuthorised);
       }
 
+    } on TimeoutException {
+      // Firestore took too long — show retry instead of freezing
+      if (!mounted) return;
+      setState(() => _state = _UnlockState.error);
     } catch (e) {
       // Network / Firestore error — show retry
+      if (!mounted) return;
       setState(() => _state = _UnlockState.error);
     }
   }
