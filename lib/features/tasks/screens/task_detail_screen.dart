@@ -229,10 +229,16 @@ class _TaskBody extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: _FocusButton(
-                onTap: () => context.push(
-                  '/pomodoro',
-                  extra: task.id,
-                ),
+                // ── BUG FIX ───────────────────────────────────────────────
+                // Was: context.push('/pomodoro', extra: task.id)
+                // The router reads initialTaskId from queryParameters, not
+                // from GoRouter's 'extra' field. Using 'extra' meant the
+                // Pomodoro screen always opened with initialTaskId == null,
+                // silently detaching the session from the task.
+                // Fix: use query parameters, consistent with all_tasks_screen
+                // and task_list_screen which both do this correctly.
+                // ─────────────────────────────────────────────────────────
+                onTap: () => context.push('/pomodoro?taskId=${task.id}'),
               ),
             ),
           ),
@@ -585,15 +591,6 @@ class _TagPickerSheetState extends ConsumerState<_TagPickerSheet> {
     );
   }
 
-  // ── BUG N1 FIX ─────────────────────────────────────────────────────────────
-  // Previously, _createTag() called createTag() (which returned void) and then
-  // called addTagToTask() with an empty string '' as tagId. The FK constraint on
-  // task_tags.tagId meant the insert either silently failed or wrote a dangling
-  // row — the new tag was NEVER linked to the task.
-  //
-  // Fix: await createTag() which now returns the new tag's ID, then pass that
-  // ID directly to addTagToTask(). No extra query needed.
-  // ─────────────────────────────────────────────────────────────────────────
   Future<void> _createTag() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
@@ -605,7 +602,7 @@ class _TagPickerSheetState extends ConsumerState<_TagPickerSheet> {
 
     await ref.read(tagNotifierProvider.notifier).addTagToTask(
       taskId: widget.taskId,
-      tagId : tagId, // ← was '' before
+      tagId : tagId,
     );
 
     _nameCtrl.clear();
